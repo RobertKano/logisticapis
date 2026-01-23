@@ -1,0 +1,124 @@
+[project]
+name = "logisticapis"
+version = "0.1.0"
+description = "Aggregation of information from transport companies' APIs"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "alabaster==1.0.0",
+    "annotated-types==0.7.0",
+    "babel==2.17.0",
+    "certifi==2026.1.4",
+    "charset-normalizer==3.4.4",
+    "colorama==0.4.6",
+    "docutils==0.22.4",
+    "idna==3.11",
+    "imagesize==1.4.1",
+    "jinja2==3.1.6",
+    "markupsafe==3.0.3",
+    "packaging==25.0",
+    "pydantic==2.12.5",
+    "pydantic-core==2.41.5",
+    "pygments==2.19.2",
+    "python-dotenv==1.2.1",
+    "requests==2.32.5",
+    "roman-numerals==4.1.0",
+    "snowballstemmer==3.0.1",
+    "sphinx==9.1.0",
+    "sphinx-rtd-theme==3.1.0",
+    "sphinxcontrib-applehelp==2.0.0",
+    "sphinxcontrib-devhelp==2.0.0",
+    "sphinxcontrib-htmlhelp==2.1.0",
+    "sphinxcontrib-jquery==4.1",
+    "sphinxcontrib-jsmath==1.0.1",
+    "sphinxcontrib-qthelp==2.0.0",
+    "sphinxcontrib-serializinghtml==2.0.0",
+    "typing-extensions==4.15.0",
+    "typing-inspection==0.4.2",
+    "urllib3==2.6.3",
+]
+
+[tool.ruff]
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+    "audio",
+    "map",
+    "graphics",
+    "venv",
+]
+fix = true
+force-exclude = true
+
+#target-version = "py313" # see [project].requires-python
+
+[tool.ruff.format]
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+indent-style = "tab"
+line-ending = "lf"
+quote-style = "single"
+line-length = 88
+indent-width = 4
+
+[tool.ruff.lint]
+extend-select = [
+    "C90",
+    "I",
+    "N",
+    "A",
+    "COM",
+    #"DJ", # if using django
+    "PIE",
+    "PT",
+    "Q",
+    "SIM",
+    "PLR",
+]
+ignore = [
+    "W191",
+    "E111",
+    "E114",
+    "E117",
+    "D206",
+    "D300",
+    "Q000",
+    "Q001",
+    "Q002",
+    "Q003",
+    "COM812",
+    "COM819",
+    "ISC001",
+    "ISC002",
+    "F401",
+    "F403",
+    "F405",
+    "E741",
+] # https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+
+[tool.ruff.lint.pycodestyle]
+max-doc-length = 120

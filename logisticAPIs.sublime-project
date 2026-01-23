@@ -1,0 +1,44 @@
+{
+	"folders":
+	[
+		{
+			"path": ".",
+		},
+	],
+	"settings": {
+		/* other settings */
+		/* LSP */
+		"lsp_format_on_save": false,
+		"lsp_code_actions_on_save": {
+			"source.fixAll.ruff": false,
+			"source.organizeImports.ruff": false,
+		},
+		"LSP": {
+			/* other lsp */
+			/* LSP-ruff */
+			"LSP-ruff": {
+				"enabled": true,
+				"initializationOptions": {
+					"settings": {
+						"configuration": "${project_path}/pyproject.toml",
+					},
+				},
+			},
+			/* other lsp */
+		},
+		// Project-specific Python interpreter path for a specific package
+		// "LSP-pylsp.executable": "/usr/bin/python3.10",
+
+		// General editor settings for this project, overriding global settings
+		"tab_size": 4,
+		"font_size": 11,
+		"translate_tabs_to_spaces": true,
+		"rulers": [72, 79], // PEP 8 rulers for comments and code
+	    "word_wrap": true,
+	    "wrap_width": 88,
+		"ensure_newline_at_eof_on_save": true,
+	    "trim_trailing_white_space_on_save": "all",
+	    // "trim_trailing_white_space_on_save": true,
+	    "fold_buttons": false,
+	},
+}
