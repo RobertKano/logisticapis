@@ -83,7 +83,7 @@ def pc_approaching_orders(pc_current_orders):
         "Утилизирован",
         "Изъят на таможне",
         "Возврат груза отправителю",
-        # "Выдан получателю",
+        "Выдан получателю",
     ]
     s = ""
     for i in pc_current_orders["cargos"]:
