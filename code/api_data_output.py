@@ -70,4 +70,4 @@ with file_path.open("w", encoding="utf-8") as f:
     f.write(adp.bc_approaching_orders(bk_current_orders))
     f.write(DELIM)
 
-    print("Запись в файл закончена")
+    print("Запись в файл ../data/chunk.txt закончена")
