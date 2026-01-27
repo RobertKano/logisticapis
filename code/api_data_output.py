@@ -1,6 +1,5 @@
 from datetime import datetime
 from pathlib import Path
-# from time import sleep
 
 import json_write as jw
 import api_data_processing as adp
@@ -16,20 +15,6 @@ from api_classes import (
     PecomApiV1,
 )
 
-# def progress(percent=0, width=30):
-#     hashes = width * percent // 100
-#     blanks = width - hashes
-
-#     print(
-#         "\r[",
-#         hashes * "#",
-#         blanks * " ",
-#         "]",
-#         f" {percent:.0f}%",
-#         sep="",
-#         end="",
-#         flush=True,
-#     )
 
 time_for_now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 DELIM = "-" * 83 + "\n"
@@ -51,11 +36,6 @@ file_path.parent.mkdir(parents=True, exist_ok=True)
 jw.main()
 
 with file_path.open("w", encoding="utf-8") as f:
-
-    # for i in range(101):
-    #     progress(i)
-    #     sleep(0.01)
-
     print()
     f.write(f"Timestamp: {time_for_now}\n")
 
