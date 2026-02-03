@@ -38,6 +38,7 @@ __pycache__/
 # Папки для сборки пакетов
 build/
 dist/
+data/
 *.egg-info/
 
 chunk.txt
