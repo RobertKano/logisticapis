@@ -16,7 +16,6 @@
 # along with this program.  If not, see <https://www.gnu.org>.
 
 
-
 from datetime import datetime
 from pathlib import Path
 import json
