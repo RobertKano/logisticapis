@@ -1,9 +1,12 @@
 [project]
-name = "## project name ##"
+name = "Api_data_agregation"
 dynamic = ["version"]
 requires-python = "~= 3.14"
 dependencies = [
+    "flask>=3.1.2",
     ## other dependencies ##
+    "python-dotenv>=1.2.1",
+    "requests>=2.32.5",
     "ruff",
     ## other dependencies ##
 ]
@@ -92,3 +95,8 @@ ignore = [
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 120
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["code*"] # Укажи только папку с кодом
+exclude = ["data*", "images*", "tests*"]

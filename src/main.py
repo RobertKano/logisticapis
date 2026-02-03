@@ -15,24 +15,37 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org>.
 
+import sys
+import os
+import logging
+from datetime import datetime
+
+# Добавляем текущую директорию в пути поиска Python
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import json_write as jw
 import main_parser as mp # импортируем наш красивый парсер
+
+
+logging.basicConfig(
+    filename=os.path.join(os.path.dirname(__file__), '..', 'data', 'process.log'),
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    encoding='utf-8'
+)
 
 def start_app():
     print("--- ШАГ 1: Сбор данных из API ТК ---")
     try:
         # Запускаем скрипт, который стучится в API и пишет test_all_tk.json
+        logging.info("--- Старт процесса обновления данных ---")
         jw.main()
+        mp.run_main_parser()
+        logging.info("--- Обновление завершено успешно ---")
         print("Сбор данных завершен успешно.\n")
     except Exception as e:
-        # В случае ошибки вывода данных, парсинг не запускаем
-        print(f"Ошибка при сборе данных: {e}")
+        logging.error(f"Критическая ошибка: {e}", exc_info=True)
         return
-
-    print("--- ШАГ 2: Фильтрация и формирование отчета ---")
-    # Запускаем наш парсер, который уже знает, где лежит файл
-    mp.run_main_parser()
 
 if __name__ == "__main__":
     start_app()

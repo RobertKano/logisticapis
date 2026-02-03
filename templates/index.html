@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Мониторинг ТК | API Data Service</title>
+    <link href="https://fonts.googleapis.com" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+
+    <style>
+        :root {
+            --brand-blue: #0a2351;
+            --accent-blue: #1a4a9e;
+            --bg-light: #f8fafc;
+            --success-green: #22c55e;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            background-color: var(--bg-light);
+            color: #1e293b;
+        }
+
+        /* Анимация пульсации */
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: var(--success-green);
+            border-radius: 50%;
+            margin-right: 8px;
+            position: relative;
+        }
+
+        .status-indicator.loading { background-color: var(--accent-blue); }
+
+        .status-pulse {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: var(--success-green);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+            opacity: 0.6;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 0.6; }
+            100% { transform: scale(3); opacity: 0; }
+        }
+
+        /* Оформление контейнеров */
+        .container-fluid { max-width: 1600px; padding: 2rem; }
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(10, 35, 81, 0.08);
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+        }
+
+        .table thead th {
+            background-color: var(--brand-blue);
+            color: white;
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            padding: 15px;
+            border: none;
+        }
+
+        .btn-brand {
+            background-color: var(--brand-blue);
+            color: white;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .btn-brand:hover { background-color: var(--accent-blue); color: white; }
+
+        code { color: var(--accent-blue); background: #f0f7ff; padding: 3px 6px; border-radius: 4px; font-family: monospace; }
+
+        .badge-tk { background: #f1f5f9; color: var(--brand-blue); border: 1px solid #e2e8f0; }
+
+        @media (max-width: 768px) {
+            .table thead { display: none; }
+            .table tbody tr { display: block; margin: 15px; border: 1px solid #e2e8f0; border-radius: 12px; background: white; }
+            .table tbody td { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f1f5f9; }
+            .table tbody td::before { content: attr(data-label); font-weight: 600; color: #64748b; }
+        }
+
+        .row-arrived {
+            background-color: #f0fdf4 !important; /* Очень светлый зеленый для прибывших */
+            border-left: 4px solid var(--success-green); /* Акцентная линия слева */
+        }
+
+        .row-arrived td {
+            color: #166534; /* Темно-зеленый текст для контраста */
+        }
+
+        /* Чтобы ховер на прибывших строках тоже работал красиво */
+        .table-hover tbody tr.row-arrived:hover {
+            background-color: #dcfce7 !important;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container-fluid">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <div class="d-flex align-items-center">
+                    <div class="status-indicator" id="api-status">
+                        <div class="status-pulse"></div>
+                    </div>
+                    <h4 class="m-0">Мониторинг логистики API</h4>
+                </div>
+                <small class="text-muted">Последняя синхронизация: <span id="update-time">{{ report.metadata.created_at }}</span></small>
+            </div>
+            <button onclick="loadReportData()" class="btn btn-sm btn-brand px-4" id="refresh-btn">Обновить поток</button>
+        </div>
+
+        <div class="mb-4">
+            <input type="text" id="searchInput" class="form-control" style="border-radius: 10px;" placeholder="Поиск по накладной, ТК или городу...">
+        </div>
+
+        <div class="table-container">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ТК</th>
+                        <th>№ Накладной</th>
+                        <th>Отправитель</th>
+                        <th>Маршрут</th>
+                        <th>Груз</th>
+                        <th>Статус</th>
+                        <th>Прибытие</th>
+                        <th>Оплата</th>
+                    </tr>
+                </thead>
+                <tbody id="report-table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        function loadReportData() {
+            const btn = document.getElementById('refresh-btn');
+            const status = document.getElementById('api-status');
+
+            btn.disabled = true;
+            status.classList.add('loading');
+
+            fetch('/api/latest')
+                .then(r => r.json())
+                .then(data => {
+                    const tbody = document.getElementById('report-table-body');
+                    tbody.innerHTML = '';
+                    document.getElementById('update-time').textContent = data.metadata.created_at;
+
+                    data.active.forEach(r => {
+                        const isArrived = (r.status || '').toLowerCase().includes('прибыл');
+                        const tr = document.createElement('tr');
+
+                        if (isArrived) {
+                            tr.classList.add('row-arrived');
+                        }
+
+                        tr.innerHTML = `
+                            <td data-label="ТК"><span class="badge badge-tk">${r.tk}</span></td>
+                            <td data-label="№ Накладной"><code>${r.id}</code></td>
+                            <td data-label="Отправитель">${r.sender}</td>
+                            <td data-label="Маршрут">${r.route}</td>
+                            <td data-label="Груз"><small class="text-muted">${r.params}</small></td>
+                            <td data-label="Статус" class="fw-bold">${r.status}</td>
+                            <td data-label="Прибытие"><strong>${r.arrival || '—'}</strong></td>
+                            <td data-label="Оплата" class="${(r.payment.toLowerCase().includes('оплаче')) ? 'text-success' : 'text-danger'} fw-bold">${r.payment}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    status.classList.remove('loading');
+                    document.getElementById('searchInput').dispatchEvent(new Event('keyup'));
+                });
+        }
+
+        document.getElementById('searchInput').addEventListener('keyup', function() {
+            const filter = this.value.toLowerCase();
+            document.querySelectorAll('#report-table-body tr').forEach(row => {
+                row.style.display = row.textContent.toLowerCase().includes(filter) ? '' : 'none';
+            });
+        });
+
+        loadReportData();
+        setInterval(loadReportData, 30000);
+    </script>
+</body>
+</html>
