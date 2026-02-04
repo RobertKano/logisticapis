@@ -1,7 +1,7 @@
 [project]
 name = "Api_data_agregation"
 dynamic = ["version"]
-requires-python = "~= 3.14"
+requires-python = ">=3.12"
 dependencies = [
     "flask>=3.1.2",
     ## other dependencies ##
