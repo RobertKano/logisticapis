@@ -6,13 +6,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 from datetime import datetime
 
+import settings as st
+
 # Загрузка переменных окружения
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TG_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TG_CHAT_ID")
 # Путь к файлу хеша, чтобы не спамить
-HASH_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'last_report_hash.txt')
+# st.HASH_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'last_report_hash.txt')
 
 def send_tg_summary(report_json_path):
     """Читает отчет и шлет детализированную сводку только по ГОТОВЫМ грузам"""
@@ -73,8 +75,8 @@ def send_tg_summary(report_json_path):
 
     # Защита от дублей: проверяем, изменился ли текст сообщения
     current_hash = hashlib.md5(msg.encode('utf-8')).hexdigest()
-    if os.path.exists(HASH_FILE):
-        with open(HASH_FILE, 'r') as f:
+    if os.path.exists(st.HASH_FILE):
+        with open(st.HASH_FILE, 'r') as f:
             if f.read() == current_hash:
                 print("[Notifier] Состав готовых грузов не изменился. Пропуск отправки.")
                 return
@@ -90,7 +92,7 @@ def send_tg_summary(report_json_path):
     try:
         r = requests.post(url, json=payload, timeout=10)
         if r.status_code == 200:
-            with open(HASH_FILE, 'w') as f:
+            with open(st.HASH_FILE, 'w') as f:
                 f.write(current_hash)
             print(f"[Notifier] Сводка ({ready_count} шт.) отправлена в Telegram.")
         else:

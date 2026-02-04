@@ -18,3 +18,26 @@
 
 
 # Constants, utility functions and variables for project
+import os
+
+HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'history_archive.json')
+HASH_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'last_report_hash.txt')
+LOG_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'process.log')
+
+CITY_MAP = {
+    "астрахань": "АСТРА",
+    "санкт-петербург": "СПБ",
+    "новосибирск": "НСК",
+    "екатеринбург": "ЕКБ",
+    "нижний новгород": "Н.НОВ",
+    "краснодар": "КРД",
+    "ростов-на-дону": "РНД",
+    "домодедово": "ДМД",
+    "одинцово": "ОДИН",
+    "пермь": "ПРМ",
+    "казань": "КЗН",
+    "челябинск": "ЧЛБ",
+    "красноярск": "КРЯ",
+    "москва": "МСК",
+    "владивосток": "ВЛД"
+}

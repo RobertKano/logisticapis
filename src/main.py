@@ -14,11 +14,12 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import json_write as jw
 import main_parser as mp
-import notifier as nt  # Импортируем наш новый модуль нотификаций
+import notifier as nt
+import settings as st
 
 
 logging.basicConfig(
-    filename=os.path.join(os.path.dirname(__file__), '..', 'data', 'process.log'),
+    filename=st.LOG_FILE,
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     encoding='utf-8'

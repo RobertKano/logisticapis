@@ -21,24 +21,8 @@ import os
 import re
 from datetime import datetime
 
-# --- КОНФИГУРАЦИЯ И СЛОВАРИ ---
-CITY_MAP = {
-    "астрахань": "АСТРА",
-    "санкт-петербург": "СПБ",
-    "новосибирск": "НСК",
-    "екатеринбург": "ЕКБ",
-    "нижний новгород": "Н.НОВ",
-    "краснодар": "КРД",
-    "ростов-на-дону": "РНД",
-    "домодедово": "ДМД",
-    "одинцово": "ОДИН",
-    "пермь": "ПРМ",
-    "казань": "КЗН",
-    "челябинск": "ЧЛБ",
-    "красноярск": "КРЯ",
-    "москва": "МСК",
-    "владивосток": "ВЛД"
-}
+import settings as st
+
 
 def clean_name(text, is_city=False):
     if not text or not isinstance(text, str): return "???"
@@ -57,7 +41,7 @@ def clean_name(text, is_city=False):
             cleaned = cleaned.replace(long, short)
 
         cleaned = cleaned.strip()
-        for full, short in CITY_MAP.items():
+        for full, short in st.CITY_MAP.items():
             if full in cleaned: cleaned = cleaned.replace(full, short)
     else:
         replacements = {
