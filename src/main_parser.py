@@ -73,25 +73,35 @@ def clean_name(text, is_city=False):
 # --- ОБРАБОТЧИКИ ТК ---
 
 def parse_baikal(data):
-    cargo_list = data.get("cargoList", [])
-    first_item = cargo_list[0] if cargo_list else {}
-    arrival_raw = first_item.get('dateArrivalPlane') or data.get('dateArrivalPlane')
+    # Если пришел не список или список пуст — возвращаем пустой список результатов
+    if not data or not isinstance(data, list):
+        return []
 
-    places = sum(int(item.get("cargo", {}).get("places") or 0) for item in cargo_list)
-    weight = sum(float(item.get("cargo", {}).get("weight") or 0) for item in cargo_list)
-    volume = sum(float(item.get("cargo", {}).get("volume") or 0) for item in cargo_list)
+    results = []
+    for order in data:
+        # Проверяем, не заглушка ли это (на всякий случай)
+        if order.get("status") == "empty":
+            continue
 
-    c_from = clean_name(first_item.get('departure', {}).get('name'), is_city=True)
-    c_to = clean_name(first_item.get('destination', {}).get('name'), is_city=True)
+        cargo_list = order.get("cargoList", [])
+        first_item = cargo_list[0] if cargo_list else {}
 
-    return {
-        "tk": "Байкал Сервис", "id": data.get("number") or "Н/Д",
-        "sender": clean_name(first_item.get("consignor", {}).get("name")),
-        "status": data.get("orderstatus", "Н/Д"),
-        "params": f"{places}м/ {weight}кг/ {volume}м3", "arrival": arrival_raw,
-        "payment": data.get("paidStatus") or "Н/Д",
-        "route": f"{c_from} -> {c_to}"
-    }
+        # Считаем параметры
+        places = sum(int(item.get("cargo", {}).get("places") or 0) for item in cargo_list)
+        weight = sum(float(item.get("cargo", {}).get("weight") or 0) for item in cargo_list)
+        volume = sum(float(item.get("cargo", {}).get("volume") or 0) for item in cargo_list)
+
+        results.append({
+            "tk": "Байкал Сервис",
+            "id": order.get("number") or "Н/Д",
+            "sender": clean_name(first_item.get("consignor", {}).get("name")),
+            "status": order.get("orderstatus", "Н/Д"),
+            "params": f"{places}м/ {weight}кг/ {volume}м3",
+            "arrival": first_item.get('dateArrivalPlane') or order.get('dateArrivalPlane'),
+            "payment": order.get("paidStatus") or "Н/Д",
+            "route": f"{clean_name(first_item.get('departure', {}).get('name'), True)} -> {clean_name(first_item.get('destination', {}).get('name'), True)}"
+        })
+    return results
 
 def parse_dellin(data):
     results = []
@@ -141,14 +151,19 @@ def run_main_parser():
     data_dir = os.path.join(base_dir, '..', 'data')
     input_file = os.path.join(data_dir, 'test_all_tk.json')
 
-    if not os.path.exists(input_file): return print(f"Файл не найден: {input_file}")
+    if not os.path.exists(input_file):
+        return print(f"Файл не найден: {input_file}")
 
-    with open(input_file, 'r', encoding='utf-8') as f: raw_json = json.load(f)
+    with open(input_file, 'r', encoding='utf-8') as f:
+        raw_json = json.load(f)
 
     raw_results = []
-    if "Baikal" in raw_json: raw_results.append(parse_baikal(raw_json["Baikal"]))
-    if "Dellin" in raw_json: raw_results.extend(parse_dellin(raw_json["Dellin"]))
-    if "Pecom" in raw_json: raw_results.extend(parse_pecom(raw_json["Pecom"]))
+    if "Baikal" in raw_json:
+        raw_results.extend(parse_baikal(raw_json["Baikal"]))
+    if "Dellin" in raw_json:
+        raw_results.extend(parse_dellin(raw_json["Dellin"]))
+    if "Pecom" in raw_json:
+        raw_results.extend(parse_pecom(raw_json["Pecom"]))
 
     EXCLUDE = ["выдан", "доставлен", "завершен", "архив", "выдача"]
     active = sorted([r for r in raw_results if not any(k in str(r['status']).lower() for k in EXCLUDE)],

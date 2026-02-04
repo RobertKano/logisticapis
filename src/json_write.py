@@ -45,8 +45,15 @@ pc_curr_ord = p.fetch_detailed_data_hardcoded()
 bk_curr_ord = b.get_oreders_list()
 
 list_of_cargo_codes = b.collect_cargocodes()
-for i in list_of_cargo_codes:
-    bc_detailed_info = b.get_order_info(i)
+bc_detailed_info = [] # Инициализируем как список
+
+if list_of_cargo_codes:
+    for i in list_of_cargo_codes:
+        # Собираем реальные данные в список
+        bc_detailed_info.append(b.get_order_info(i))
+else:
+    print("Заказов в Байкал-Сервис не обнаружено.")
+    # Оставляем список пустым: bc_detailed_info = []
 
 
 def get_all_data_in_json(dl, pc, bk):

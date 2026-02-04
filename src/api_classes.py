@@ -304,9 +304,13 @@ class DellinApiV1:
 def main():
     b = BaikalApiV2(BK_SECRET_KEY)
 
-    bk_curr_ord = b.get_oreders_list()
+    list_of_cargo_codes = b.collect_cargocodes()
 
-    print(type(bk_curr_ord))
+    if list_of_cargo_codes:
+        for i in list_of_cargo_codes:
+            bc_detailed_info = b.get_order_info(i)
+    else:
+        print("Кажется список заказов в ТК Байкал пуст!")
 
 if __name__ == '__main__':
     main()
