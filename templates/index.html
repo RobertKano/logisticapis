@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <title>Мониторинг ТК | API Data Service</title>
     <link href="https://fonts.googleapis.com" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
@@ -83,7 +84,7 @@
             <div>
                 <div class="d-flex align-items-center">
                     <div class="status-indicator" id="api-status"><div class="status-pulse"></div></div>
-                    <h4 class="m-0 fw-bold">Мониторинг логистики API</h4>
+                    <h4 class="m-0 fw-bold">Мониторинг логистики</h4>
                 </div>
                 <small class="text-muted">Синхронизация: <span id="update-time">—</span></small>
             </div>
@@ -118,10 +119,14 @@
         </div>
 
         <div class="row g-3 mb-4 align-items-center">
-            <div class="col-md-8">
-                <input type="text" id="searchInput" class="form-control border-0 shadow-sm" style="border-radius: 10px; padding: 12px 20px;" placeholder="Поиск...">
+            <div class="col-md-6">
+                <input type="text" id="searchInput" class="form-control border-0 shadow-sm" style="border-radius: 10px; padding: 12px 20px;" placeholder="Поиск по накладной, ТК или городу...">
             </div>
-            <div class="col-md-4 text-md-end">
+            <div class="col-md-3">
+                <!-- Поле выбора даты -->
+                <input type="date" id="dateFilter" class="form-control border-0 shadow-sm" style="border-radius: 10px; padding: 10px 15px;">
+            </div>
+            <div class="col-md-3 text-md-end">
                 <div class="btn-group shadow-sm bg-white p-1" style="border-radius: 10px;">
                     <button class="btn btn-light active" id="btn-active" onclick="setView('active')">Активные</button>
                     <button class="btn btn-light" id="btn-archive" onclick="setView('archive')">Архив</button>
@@ -232,15 +237,59 @@ function renderTable() {
         }
 
         function filterTable() {
-            const filter = document.getElementById('searchInput').value.toLowerCase();
+            const textFilter = document.getElementById('searchInput').value.toLowerCase();
+            const dateFilter = document.getElementById('dateFilter').value; // Формат ГГГГ-ММ-ДД
+
             document.querySelectorAll('#report-table-body tr').forEach(row => {
-                row.style.display = row.textContent.toLowerCase().includes(filter) ? '' : 'none';
+                const text = row.textContent.toLowerCase();
+
+                // Достаем дату из строки (она у нас в 7-й колонке: Прибытие)
+                // В архиве у нас даты в формате ДД.ММ.ГГГГ или ГГГГ-ММ-ДД
+                const dateCell = row.cells[6].textContent.trim();
+
+                let matchesText = text.includes(textFilter);
+                let matchesDate = true;
+
+                if (dateFilter) {
+                    // Превращаем ДД.ММ.ГГГГ в ГГГГ-ММ-ДД для сравнения с календарем
+                    let formattedCellDate = dateCell;
+                    if (dateCell.includes('.')) {
+                        const parts = dateCell.split('.');
+                        formattedCellDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                    }
+                    matchesDate = formattedCellDate.includes(dateFilter);
+                }
+
+                row.style.display = (matchesText && matchesDate) ? '' : 'none';
             });
         }
+
+        // Вешаем обработчик и на календарь тоже
+        document.getElementById('dateFilter').addEventListener('change', filterTable);
 
         document.getElementById('searchInput').addEventListener('keyup', filterTable);
         loadReportData();
         setInterval(loadReportData, 60000);
     </script>
+
+    <footer class="container-fluid mt-5 mb-4">
+        <div class="row border-top pt-4">
+            <div class="col-md-6 text-muted small">
+                © 2024-2026 <strong>LogisticAPIs Service</strong><br>
+                Система мониторинга транспортных потоков v1.0 (MVP)
+            </div>
+            <div class="col-md-6 text-md-end mt-2 mt-md-0">
+                <span class="text-muted small me-2">Проект помог сэкономить время?</span>
+                <a href="https://donatty.com/robertkano" target="_blank" class="btn btn-sm btn-outline-primary shadow-sm" style="border-radius: 8px; font-weight: 500;">
+                    ☕️ Угостить кофе
+                </a>
+            </div>
+        </div>
+        <div class="text-center mt-3">
+            <small class="text-muted" style="font-size: 0.7rem; opacity: 0.6;">
+                Developed with ❤️ by RobertKano
+            </small>
+        </div>
+    </footer>
 </body>
 </html>

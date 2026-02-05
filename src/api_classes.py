@@ -105,7 +105,7 @@ class BaikalApiV2:
                 "from": str(time_for_month_ago.isoformat(timespec="seconds")),
                 "to": str(time_for_now.isoformat(timespec="seconds")),
             },
-            "status": [0, 4, 5, 6, 7, 10, 11, 12, 9],
+            "status": [0, 4, 5, 6, 7, 10, 11, 12, 9, 8, 13],
         }
         r = requests.post(
             self.url_cargos_list,
@@ -293,12 +293,47 @@ class DellinApiV1:
             self.url_orders, data=json.dumps(data), headers=self.headers
         ).json()
 
+    # def orders_info(self):
+    #     data = {
+    #         "states":
+    #             [
+    #                 "inway",
+    #                 "arrived",
+    #                 "warehousing",
+    #                 "delivery",
+    #                 "finished"
+    #             ]
+    #     }
+    #     data.update(self.customers_auth())
+    #     return requests.post(
+    #         self.url_orders, data=json.dumps(data), headers=self.headers
+    #     ).json()
+
     def orders_info(self):
-        data = {"states": ["inway", "arrived", "warehousing", "delivery"]}
+        # Вычисляем дату: 30 дней назад
+        # Формат должен быть "ГГГГ-ММ-ДД ЧЧ:ММ" согласно документации
+        thirty_days_ago = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d %H:%M')
+
+        data = {
+            "states": [
+                "inway",
+                "arrived",
+                "warehousing",
+                "delivery",
+                "finished"
+            ],
+            # Добавляем фильтр по дате начала периода
+            "dateStart": thirty_days_ago
+        }
+
         data.update(self.customers_auth())
-        return requests.post(
-            self.url_orders, data=json.dumps(data), headers=self.headers
-        ).json()
+
+        r = requests.post(
+            self.url_orders,
+            data=json.dumps(data),
+            headers=self.headers
+        )
+        return r.json()
 
 
 def main():

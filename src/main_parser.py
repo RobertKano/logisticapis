@@ -24,6 +24,37 @@ from datetime import datetime
 import settings as st
 
 
+def update_permanent_archive(new_archive_items):
+    """Сохраняет уникальные завершенные заказы в вечный архив"""
+    # 1. Читаем существующий архив
+    if os.path.exists(st.HISTORY_FILE):
+        with open(st.HISTORY_FILE, 'r', encoding='utf-8') as f:
+            try:
+                old_history = json.load(f)
+            except:
+                old_history = []
+    else:
+        old_history = []
+
+    # 2. Создаем набор ID, которые уже есть в архиве (чтобы не дублировать)
+    existing_ids = {str(item['id']) for item in old_history}
+
+    # 3. Добавляем только те, которых еще нет
+    added_count = 0
+    for item in new_archive_items:
+        if str(item['id']) not in existing_ids:
+            # Добавляем дату перемещения в архив для порядка
+            item['archived_at'] = datetime.now().strftime('%d.%m.%Y')
+            old_history.append(item)
+            existing_ids.add(str(item['id']))
+            added_count += 1
+
+    # 4. Сохраняем обновленный архив
+    if added_count > 0:
+        with open(st.HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(old_history, f, ensure_ascii=False, indent=4)
+        print(f"[Archive] Добавлено новых записей в историю: {added_count}")
+
 def clean_name(text, is_city=False):
     if not text or not isinstance(text, str): return "???"
     cleaned = re.sub(r'\(.*?\)', '', text).lower()
@@ -130,6 +161,8 @@ def save_json_report(data, file_path):
 
 # --- ОСНОВНОЙ ПУЛЬТ ---
 
+# Пути к файлам (убедись, что они в начале модуля)
+
 def run_main_parser():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     data_dir = os.path.join(base_dir, '..', 'data')
@@ -142,46 +175,86 @@ def run_main_parser():
         raw_json = json.load(f)
 
     raw_results = []
-    if "Baikal" in raw_json:
-        raw_results.extend(parse_baikal(raw_json["Baikal"]))
-    if "Dellin" in raw_json:
-        raw_results.extend(parse_dellin(raw_json["Dellin"]))
-    if "Pecom" in raw_json:
-        raw_results.extend(parse_pecom(raw_json["Pecom"]))
+    # Сбор данных от всех ТК
+    if "Baikal" in raw_json: raw_results.extend(parse_baikal(raw_json["Baikal"]))
+    if "Dellin" in raw_json: raw_results.extend(parse_dellin(raw_json["Dellin"]))
+    if "Pecom" in raw_json: raw_results.extend(parse_pecom(raw_json["Pecom"]))
 
-    EXCLUDE = ["выдан", "доставлен", "завершен", "архив", "выдача"]
-    active = sorted([r for r in raw_results if not any(k in str(r['status']).lower() for k in EXCLUDE)],
-                    key=lambda x: str(x['arrival'] or "9999"))
-    hidden = [r for r in raw_results if any(k in str(r['status']).lower() for k in EXCLUDE)]
+    # 1. ЛОГИКА "ПАМЯТИ": Сравниваем с прошлым запуском
+    current_ids = {str(r['id']) for r in raw_results}
+
+    if os.path.exists(st.LAST_STATE_FILE):
+        with open(st.LAST_STATE_FILE, 'r', encoding='utf-8') as f:
+            try: last_active = json.load(f)
+            except: last_active = []
+    else:
+        last_active = []
+
+    # Ищем тех, кто пропал из API (значит, выдали или удалили)
+    missing_items = []
+    for item in last_active:
+        if str(item['id']) not in current_ids:
+            item['status'] = "Выдан (автоархив)"
+            missing_items.append(item)
+
+    # 2. КЛАССИФИКАЦИЯ ТЕКУЩИХ
+    EXCLUDE = ["выдан", "доставлен", "завершен", "архив", "выдача", "получен"]
+
+    active = sorted(
+        [r for r in raw_results if not any(k in str(r['status']).lower() for k in EXCLUDE)],
+        key=lambda x: str(x['arrival'] or "9999")
+    )
+
+    # Заказы, которые ПРЯМО СЕЙЧАС в API имеют статус "Выдан"
+    just_finished_api = [r for r in raw_results if any(k in str(r['status']).lower() for k in EXCLUDE)]
+
+    # 3. АРХИВАЦИЯ (Объединяем явно выданные и пропавшие из эфира)
+    to_archive = just_finished_api + missing_items
+    update_permanent_archive(to_archive)
+
+    # Сохраняем текущий актив для следующего сравнения
+    with open(st.LAST_STATE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(active, f, ensure_ascii=False, indent=4)
+
+    # 4. ПОДГОТОВКА ДАННЫХ ДЛЯ ФРОНТЕНДА
+    if os.path.exists(st.HISTORY_FILE):
+        with open(st.HISTORY_FILE, 'r', encoding='utf-8') as f:
+            try: full_history = json.load(f)
+            except: full_history = to_archive
+    else:
+        full_history = to_archive
 
     report_time = datetime.now().strftime('%d.%m.%Y %H:%M:%S')
-
-    # СБОРКА ТЕКСТОВОГО ОТЧЕТА
-    report_lines = [f"\nОТЧЕТ ТРАНСПОРТ | {report_time}", "="*165]
-    head = f"{'ТК':<15} | {'№ Накладной':<18} | {'Отправитель':<20} | {'Маршрут':<25} | {'Груз':<22} | {'Статус':<25} | {'Прибытие':<10} | {'Оплата':<12}"
-    report_lines.append(head)
-    report_lines.append("-"*165)
-
-    for r in active:
-        line = (f"{r['tk']:<15} | {str(r['id']):<18} | {str(r['sender'])[:19]:<20} | "
-                f"{str(r['route'])[:24]:<25} | {str(r['params']):<22} | "
-                f"{str(r['status'])[:24]:<25} | {str(r['arrival'] or 'Н/Д')[:10]:<10} | {str(r['payment'])[:12]:<12}")
-        report_lines.append(line)
-
-    # СБОРКА JSON
     json_data = {
-        "metadata": {"created_at": report_time, "active_count": len(active)},
+        "metadata": {
+            "created_at": report_time,
+            "active_count": len(active),
+            "archive_count": len(full_history)
+        },
         "active": active,
-        "archive": hidden
+        "archive": full_history
     }
 
-    # ВЫВОД И СОХРАНЕНИЕ
-    for line in report_lines: print(line)
+    # 5. КОНСОЛЬНЫЙ ВЫВОД (возвращаем сводку)
+    print(f"\nОТЧЕТ ТРАНСПОРТ | {report_time}")
+    print("="*150)
+    head = f"{'ТК':<15} | {'№ Накладной':<18} | {'Отправитель':<20} | {'Маршрут':<25} | {'Статус':<30} | {'Прибытие':<10}"
+    print(head)
+    print("-"*150)
+    for r in active:
+        line = (f"{r['tk']:<15} | {str(r['id']):<18} | {str(r['sender'])[:19]:<20} | "
+                f"{str(r['route'])[:24]:<25} | {str(r['status'])[:29]:<30} | {str(r['arrival'] or 'Н/Д')[:10]:<10}")
+        print(line)
 
+    # 6. СОХРАНЕНИЕ ОТЧЕТОВ
     date_str = datetime.now().strftime('%Y-%m-%d')
-    save_report_to_file(report_lines, os.path.join(data_dir, f"log_report_{date_str}.txt"))
     save_json_report(json_data, os.path.join(data_dir, f"report_{date_str}.json"))
-    print(f"\n[✓] Отчеты (TXT + JSON) сохранены в папку data")
+    save_json_report(json_data, os.path.join(data_dir, "test_all_tk_processed.json"))
+
+    print(f"\n[✓] Обработка завершена. Активно: {len(active)}, Добавлено в архив: {len(to_archive)}")
+
+
+
 
 if __name__ == "__main__":
     run_main_parser()

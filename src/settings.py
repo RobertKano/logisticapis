@@ -21,6 +21,7 @@
 import os
 
 HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'history_archive.json')
+LAST_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'last_active_state.json')
 HASH_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'last_report_hash.txt')
 LOG_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'process.log')
 
