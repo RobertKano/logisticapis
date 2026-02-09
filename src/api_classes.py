@@ -320,6 +320,7 @@ class DellinApiV1:
                 "arrived",
                 "warehousing",
                 "delivery",
+                "received",
                 "finished"
             ],
             # Добавляем фильтр по дате начала периода

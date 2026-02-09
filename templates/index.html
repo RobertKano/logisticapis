@@ -144,7 +144,9 @@
                         <th>Маршрут</th>
                         <th>Груз</th>
                         <th>Статус</th>
-                        <th>Прибытие</th>
+                        <th onclick="toggleSort()" style="cursor: pointer; user-select: none;">
+                            Прибытие <span id="sort-icon">🔽</span>
+                        </th>
                         <th>Оплата</th>
                     </tr>
                 </thead>
@@ -156,6 +158,18 @@
     <script>
         let currentView = 'active';
         let fullData = { active: [], archive: [] };
+        let sortDirection = 'desc'; // По умолчанию новые сверху
+
+        function toggleSort(column) {
+            // Переключаем направление
+            sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+
+            // Обновляем иконку для наглядности
+            const icon = document.getElementById('sort-icon');
+            icon.innerHTML = sortDirection === 'asc' ? '🔼' : '🔽';
+
+            renderTable();
+        }
 
         function setView(view) {
             currentView = view;
@@ -164,10 +178,20 @@
             renderTable();
         }
 
-function renderTable() {
+        function renderTable() {
             const tbody = document.getElementById('report-table-body');
-            const list = fullData[currentView] || [];
+            // 1. Берем копию списка, чтобы не мутировать исходные данные
+            let list = [...(fullData[currentView] || [])];
             tbody.innerHTML = '';
+
+            // 2. ДОБАВЛЯЕМ СОРТИРОВКУ ЗДЕСЬ
+            list.sort((a, b) => {
+                // Пробуем взять arrival, если его нет (для архива) — пробуем archived_at
+                const dateA = new Date(a.arrival || (a.archived_at ? a.archived_at.split('.').reverse().join('-') : 0));
+                const dateB = new Date(b.arrival || (b.archived_at ? b.archived_at.split('.').reverse().join('-') : 0));
+
+                return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+            });
 
             list.forEach(r => {
                 const rawStatus = (r.status || '').toLowerCase();
@@ -177,13 +201,15 @@ function renderTable() {
                 if (rawStatus.includes('прибыл') || rawStatus.includes('готов') || rawStatus.includes('хранение')) {
                     displayStatus = "✅ На складе";
                     statusClass = "text-success";
-                } else if (rawStatus.includes('пути') || rawStatus.includes('транзит')) {
+                } else if (rawStatus.includes('пути') || rawStatus.includes('транзит') || rawStatus.includes('принят')){
                     displayStatus = "🚚 В пути";
                     statusClass = "text-primary";
                 }
 
                 // Логика оплаты
-                const isPaid = r.payment.toLowerCase().includes('оплаче');
+                const paymentLower = r.payment.toLowerCase();
+                // const isPaid = r.payment.toLowerCase().includes('оплаче');
+                const isPaid = paymentLower.startsWith('оплаче') || !paymentLower.includes('не');
                 const paymentStyle = isPaid ? 'text-success' : 'badge bg-danger text-white px-2 py-1';
                 const paymentText = isPaid ? 'Оплачено' : r.payment;
 
@@ -194,14 +220,18 @@ function renderTable() {
                 const tr = document.createElement('tr');
                 if (displayStatus.includes('складе') && currentView === 'active') tr.classList.add('row-arrived');
 
+                const rawDate = r.arrival ? r.arrival.split('T')[0] :
+               (r.archived_at ? r.archived_at.split('.').reverse().join('-') : '0000-00-00');
                 tr.innerHTML = `
                     <td data-label="ТК"><span class="badge-tk" style="${tkStyle}">${r.tk}</span></td>
                     <td data-label="№ Накладной"><code>${r.id}</code></td>
                     <td data-label="Отправитель">${r.sender}</td>
                     <td data-label="Маршрут">${r.route}</td>
-                    <td data-label="Груз"><small class="text-muted">${r.params}</small></td>
+                    <td data-label="Груз"><small class="">${r.params}</small></td>
                     <td data-label="Статус" class="fw-bold ${statusClass}">${displayStatus}</td>
-                    <td data-label="Прибытие"><strong>${r.arrival ? r.arrival.split('T')[0] : '—'}</strong></td>
+                    <td data-label="Прибытие" data-date="${rawDate}">
+                        <strong>${r.arrival ? r.arrival.split('T')[0] : (r.archived_at || '—')}</strong>
+                    </td>
                     <td data-label="Оплата"><span class="${paymentStyle}">${paymentText}</span></td>
                 `;
                 tbody.appendChild(tr);
@@ -223,12 +253,19 @@ function renderTable() {
                     document.getElementById('stat-ready').textContent = data.active.filter(r =>
                         ["прибыл", "готов", "хранение"].some(w => r.status.toLowerCase().includes(w))
                     ).length;
-                    document.getElementById('stat-transit').textContent = data.active.filter(r =>
-                        r.status.toLowerCase().includes('пути')
-                    ).length;
-                    document.getElementById('stat-debt').textContent = data.active.filter(r =>
-                        !r.payment.toLowerCase().includes('оплаче')
-                    ).length;
+                    // document.getElementById('stat-transit').textContent = data.active.filter(r =>
+                    //     r.status.toLowerCase().includes('пути')
+                    // ).length;
+                    document.getElementById('stat-transit').textContent = data.active.filter(r => {
+                        const status = r.status.toLowerCase();
+                        // Проверяем, есть ли в статусе хотя бы одна из этих фраз
+                        return ['пути', 'принят к перевозке', 'в дороге'].some(word => status.includes(word));
+                    }).length;
+                    document.getElementById('stat-debt').textContent = data.active.filter(r => {
+                        const paymentLower = r.payment.toLowerCase();
+                        const isPaid = paymentLower.startsWith('оплаче') || !paymentLower.includes('не');
+                        return !isPaid; // Считаем те, что НЕ оплачены
+                    }).length;
                     renderTable();
                 })
                 .finally(() => {
@@ -238,31 +275,27 @@ function renderTable() {
 
         function filterTable() {
             const textFilter = document.getElementById('searchInput').value.toLowerCase();
-            const dateFilter = document.getElementById('dateFilter').value; // Формат ГГГГ-ММ-ДД
+            const dateFilter = document.getElementById('dateFilter').value; // Формат ГГГГ-ММ-ДД из инпута
 
             document.querySelectorAll('#report-table-body tr').forEach(row => {
                 const text = row.textContent.toLowerCase();
 
-                // Достаем дату из строки (она у нас в 7-й колонке: Прибытие)
-                // В архиве у нас даты в формате ДД.ММ.ГГГГ или ГГГГ-ММ-ДД
-                const dateCell = row.cells[6].textContent.trim();
+                // КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: достаем дату из дата-атрибута, а не по индексу [6]
+                const dateCell = row.querySelector('[data-date]');
+                const rowDate = dateCell ? dateCell.getAttribute('data-date') : '';
 
                 let matchesText = text.includes(textFilter);
                 let matchesDate = true;
 
                 if (dateFilter) {
-                    // Превращаем ДД.ММ.ГГГГ в ГГГГ-ММ-ДД для сравнения с календарем
-                    let formattedCellDate = dateCell;
-                    if (dateCell.includes('.')) {
-                        const parts = dateCell.split('.');
-                        formattedCellDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
-                    }
-                    matchesDate = formattedCellDate.includes(dateFilter);
+                    // Прямое сравнение строк ГГГГ-ММ-ДД === ГГГГ-ММ-ДД
+                    matchesDate = (rowDate === dateFilter);
                 }
 
                 row.style.display = (matchesText && matchesDate) ? '' : 'none';
             });
         }
+
 
         // Вешаем обработчик и на календарь тоже
         document.getElementById('dateFilter').addEventListener('change', filterTable);
@@ -273,23 +306,56 @@ function renderTable() {
     </script>
 
     <footer class="container-fluid mt-5 mb-4">
-        <div class="row border-top pt-4">
+        <div class="row border-top pt-4 align-items-center">
+            <!-- Левая часть: копирайт -->
             <div class="col-md-6 text-muted small">
                 © 2024-2026 <strong>LogisticAPIs Service</strong><br>
                 Система мониторинга транспортных потоков v1.0 (MVP)
             </div>
-            <div class="col-md-6 text-md-end mt-2 mt-md-0">
-                <span class="text-muted small me-2">Проект помог сэкономить время?</span>
-                <a href="https://donatty.com/robertkano" target="_blank" class="btn btn-sm btn-outline-primary shadow-sm" style="border-radius: 8px; font-weight: 500;">
-                    ☕️ Угостить кофе
-                </a>
+
+            <!-- Правая часть: блок с кнопкой и текстом, выровненный в линию справа -->
+            <div class="col-md-6 text-md-right text-center mt-3 mt-md-0">
+
+                <div class="d-flex align-items-center justify-content-center justify-content-md-end">
+
+                    <!-- НОВАЯ ССЫЛКА НА ДОКУМЕНТАЦИЮ -->
+                    <a href="/docs/" class="text-muted small mr-3" target="_blank" style="text-decoration: underline; opacity: 0.8;">
+                        **API Документация**
+                    </a>
+                    <!-- КОНЕЦ НОВОЙ ССЫЛКИ -->
+
+                    <!-- 1 элемент: "Сервис сэкономил время?" -->
+                    <span class="text-muted small mr-2">Сервис сэкономил время?</span>
+
+                    <!-- 2 элемент: Наша кастомная кнопка (ссылка) -->
+                    <a href="https://yoomoney.ru/to/4100119466723517"
+                       target="_blank"
+                       class="btn btn-sm text-white mr-2"
+                       style="background-color: #725dff; border-radius: 8px; font-weight: 500;">
+                        Подарить
+                    </a>
+
+                    <!-- 3 элемент: "Чашку кофе" -->
+                    <span class="text-muted small">
+                        <strong>Чашку кофе</strong>
+                    </span>
+
+                </div>
             </div>
         </div>
-        <div class="text-center mt-3">
+
+        <!-- Подпись автора -->
+        <div class="text-center mt-4">
             <small class="text-muted" style="font-size: 0.7rem; opacity: 0.6;">
                 Developed with ❤️ by RobertKano
             </small>
         </div>
     </footer>
+
+
+
+
+
 </body>
+
 </html>

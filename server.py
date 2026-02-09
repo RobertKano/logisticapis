@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, send_from_directory
 import json
 import os
 from datetime import datetime
@@ -6,9 +6,9 @@ from datetime import datetime
 # Инициализируем Flask приложение
 app = Flask(__name__)
 
-# Определяем путь к папке data относительно текущего скрипта
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
+DOCS_PATH = os.path.join(BASE_DIR, 'docs', 'build', 'html')
 
 def get_latest_report():
     """Загружает самый свежий JSON-отчет."""
@@ -43,11 +43,18 @@ def api_latest():
     else:
         return jsonify({"status": "error", "message": "Report not found"}), 404
 
+@app.route('/docs/')
+@app.route('/docs/<path:filename>')
+def render_docs(filename='index.html'):
+    """Отдает файлы документации Sphinx."""
+    return send_from_directory(DOCS_PATH, filename)
+
 
 if __name__ == '__main__':
     # Запуск локально на стандартном порту 5000
     print("Сервер запущен. Просмотр отчета: http://localhost:5000")
     print("API endpoint: http://localhost:5000/api/latest")
+    print("Документация доступна по адресу: http://localhost:5000/docs/")
     app.run(debug=True, host='0.0.0.0', port=5000)
     # 192.168.0.96
 

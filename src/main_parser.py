@@ -111,7 +111,7 @@ def parse_baikal(data):
             "id": order.get("number") or "Н/Д",
             "sender": clean_name(first_item.get("consignor", {}).get("name")),
             "status": order.get("orderstatus", "Н/Д"),
-            "params": f"{places}м/ {weight}кг/ {volume}м3",
+            "params": f"{places}м | {weight}кг | {volume}м3",
             "arrival": first_item.get('dateArrivalPlane') or order.get('dateArrivalPlane'),
             "payment": order.get("paidStatus") or "Н/Д",
             "route": f"{clean_name(first_item.get('departure', {}).get('name'), True)} -> {clean_name(first_item.get('destination', {}).get('name'), True)}"
@@ -126,7 +126,7 @@ def parse_dellin(data):
             "tk": "Деловые Линии", "id": o.get("orderId"),
             "sender": clean_name(o.get("sender", {}).get("name")),
             "status": f"{o.get('stateName')} ({o.get('progressPercent')}%)",
-            "params": f"{f.get('places')}м/ {f.get('weight')}кг/ {f.get('volume')}м3",
+            "params": f"{f.get('places')}м | {f.get('weight')}кг | {f.get('volume')}м3",
             "arrival": o.get("orderDates", {}).get("arrivalToOspReceiver"),
             "payment": "Оплачено" if o.get("isPaid") else "Не оплачено",
             "route": f"{clean_name(o.get('derival', {}).get('city'), True)} -> {clean_name(o.get('arrival', {}).get('city'), True)}"
@@ -142,7 +142,7 @@ def parse_pecom(data):
             "tk": "ПЭК", "id": c.get("cargoBarCode"),
             "sender": clean_name(i.get("sender", {}).get("sender")),
             "status": i.get("info", {}).get("cargoStatus"),
-            "params": f"{c.get('amount')}м/ {c.get('weight')}кг/ {c.get('volume')}m3",
+            "params": f"{c.get('amount')}м | {c.get('weight')}кг | {c.get('volume')}m3",
             "arrival": i.get("info", {}).get("arrivalPlanDateTime"),
             "payment": "Оплачено" if debt <= 0 else f"Долг: {debt}",
             "route": f"{clean_name(i.get('sender', {}).get('branchInfo', {}).get('city'), True)} -> {clean_name(i.get('receiver', {}).get('branch', {}).get('city'), True)}"

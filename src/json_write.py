@@ -80,7 +80,7 @@ def get_all_data_in_json(dl, pc, bk):
 
         with file_path.open("w", encoding='utf-8') as json_file:
             json.dump(combined_data, json_file, indent=2, sort_keys=True, ensure_ascii=False)
-        print("Cargos API data was successfully saved to /data/test_all_tk.json")
+        print("[✓] Сбор всех 'сырых' данных завершен (/data/test_all_tk.json)")
 
     except requests.exceptions.RequestException as e:
         print(f"As error was occured during the API request: {e}")
