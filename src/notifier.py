@@ -40,6 +40,18 @@ def send_tg_summary(report_json_path):
 
     for item in active_items:
         status_text = str(item.get('status', '')).lower()
+        sender = str(item.get('sender', '')).upper()
+        route = str(item.get('route', '')).upper()
+
+        # 1. УСЛОВИЯ ИСКЛЮЧЕНИЯ (Фильтры для водителя)
+        # Исключаем "Южный Форпост"
+        if "ЮЖНЫЙ ФОРПОСТ" in sender:
+            continue
+
+        # Исключаем всё, что едет НЕ в Астрахань (проверяем хвост маршрута)
+        # "route": "АСТРА -> ПЕНЗА"
+        if "АСТРА" not in route.split('->')[-1] and "АСТРА" not in route.split('➡️')[-1]:
+            continue
 
         # Проверка: должен ли водитель видеть этот груз
         if any(word in status_text for word in READY_STATUSES):

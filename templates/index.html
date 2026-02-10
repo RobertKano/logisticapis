@@ -193,17 +193,21 @@
                 return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
             });
 
+            // репрезентация во фронт статусов из бэка
             list.forEach(r => {
                 const rawStatus = (r.status || '').toLowerCase();
                 let displayStatus = r.status;
                 let statusClass = "text-dark";
 
                 if (rawStatus.includes('прибыл') || rawStatus.includes('готов') || rawStatus.includes('хранение')) {
-                    displayStatus = "✅ На складе";
+                    displayStatus = "✅ Прибыл в ТК";
                     statusClass = "text-success";
                 } else if (rawStatus.includes('пути') || rawStatus.includes('транзит') || rawStatus.includes('принят')){
                     displayStatus = "🚚 В пути";
                     statusClass = "text-primary";
+                } else if (rawStatus.includes('оставк') || rawStatus.includes('Доставка груза до адреса') || rawStatus.includes('до адреса') || rawStatus.includes('до адреса')){
+                    displayStatus = "🚚 Доставка ТК ➡️ СКЛАД";
+                    statusClass = "text-success";
                 }
 
                 // Логика оплаты
