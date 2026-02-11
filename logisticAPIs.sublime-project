@@ -31,7 +31,7 @@
 
 		// General editor settings for this project, overriding global settings
 		"tab_size": 4,
-		"font_size": 10,
+		"font_size": 11,
 		"translate_tabs_to_spaces": true,
 		"rulers": [72, 79], // PEP 8 rulers for comments and code
 	    "word_wrap": true,

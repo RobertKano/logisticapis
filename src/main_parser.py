@@ -99,7 +99,22 @@ def parse_baikal(data):
             continue
 
         cargo_list = order.get("cargoList", [])
-        first_item = cargo_list[0] if cargo_list else {}
+        if not cargo_list: continue
+
+        first_item = cargo_list[0]
+        consignor = first_item.get("consignor", {})
+        consignee = first_item.get("consignee", {})
+
+        services = first_item.get("services", [])
+        payer_data = services[0].get("payer", {}) if services else {}
+        payer_inn = payer_data.get("inn")
+
+        if payer_inn == consignee.get("inn"):
+            payer_type = "recipient"
+        elif payer_inn == consignor.get("inn"):
+            payer_type = "sender"
+        else:
+            payer_type = "third_party"
 
         # Считаем параметры
         places = sum(int(item.get("cargo", {}).get("places") or 0) for item in cargo_list)
@@ -109,7 +124,9 @@ def parse_baikal(data):
         results.append({
             "tk": "Байкал Сервис",
             "id": order.get("number") or "Н/Д",
-            "sender": clean_name(first_item.get("consignor", {}).get("name")),
+            "sender": clean_name(consignor.get("name")),
+            "recipient": clean_name(consignee.get("name")),
+            "payer_type": payer_type,
             "status": order.get("orderstatus", "Н/Д"),
             "params": f"{places}м | {weight}кг | {volume}м3",
             "arrival": first_item.get('dateArrivalPlane') or order.get('dateArrivalPlane'),
@@ -122,14 +139,32 @@ def parse_dellin(data):
     results = []
     for o in data.get("orders", []):
         f = o.get("freight", {})
+
+        sender_data = o.get("sender", {})
+        receiver_data = o.get("receiver", {})
+        payer_data = o.get("payer", {})
+
+        p_inn = payer_data.get("inn")
+        r_inn = receiver_data.get("inn")
+
+        if p_inn and r_inn and p_inn == r_inn:
+            payer_type = "recipient"  # Платим мы
+        elif p_inn and p_inn == sender_data.get("inn"):
+            payer_type = "sender"     # Платит отправитель
+        else:
+            payer_type = "third_party" # Третье лицо
+
         results.append({
-            "tk": "Деловые Линии", "id": o.get("orderId"),
-            "sender": clean_name(o.get("sender", {}).get("name")),
+            "tk": "Деловые Линии",
+            "id": o.get("orderId"),
+            "sender": clean_name(sender_data.get("name")),
+            "recipient": clean_name(receiver_data.get("name")), # ПОЛУЧАТЕЛЬ
+            "payer_type": payer_type,                           # ТИП ПЛАТЕЛЬЩИКА
             "status": f"{o.get('stateName')} ({o.get('progressPercent')}%)",
             "params": f"{f.get('places')}м | {f.get('weight')}кг | {f.get('volume')}м3",
             "arrival": o.get("orderDates", {}).get("arrivalToOspReceiver"),
             "payment": "Оплачено" if o.get("isPaid") else "Не оплачено",
-            "route": f"{clean_name(o.get('derival', {}).get('city'), True)} -> {clean_name(o.get('arrival', {}).get('city'), True)}"
+            "route": f"{clean_name(o.get('derival', {}).get('terminalCity') or o.get('derival', {}).get('city'), True)} -> {clean_name(o.get('arrival', {}).get('terminalCity') or o.get('arrival', {}).get('city'), True)}"
         })
     return results
 
@@ -137,15 +172,33 @@ def parse_pecom(data):
     results = []
     for i in data.get("cargos", []):
         c = i.get("cargo", {})
-        debt = i.get("services", {}).get("debt", 0)
+        info = i.get("info", {})
+        services = i.get("services", {})
+
+        service_items = services.get("items", [])
+        first_service = service_items[0] if service_items else {}
+        p_type_raw = first_service.get("payerType")
+
+        if p_type_raw == 2:
+            payer_type = "recipient"
+        elif p_type_raw == 1:
+            payer_type = "sender"
+        else:
+            payer_type = "third_party"
+
+        debt = services.get("debt", 0)
+
         results.append({
-            "tk": "ПЭК", "id": c.get("cargoBarCode"),
+            "tk": "ПЭК",
+            "id": c.get("cargoBarCode"),
             "sender": clean_name(i.get("sender", {}).get("sender")),
-            "status": i.get("info", {}).get("cargoStatus"),
-            "params": f"{c.get('amount')}м | {c.get('weight')}кг | {c.get('volume')}m3",
-            "arrival": i.get("info", {}).get("arrivalPlanDateTime"),
+            "recipient": clean_name(i.get("receiver", {}).get("receiver")), # ПОЛУЧАТЕЛЬ
+            "payer_type": payer_type,                                       # ТИП ПЛАТЕЛЬЩИКА
+            "status": info.get("cargoStatus"),
+            "params": f"{int(c.get('amount', 0))}м | {c.get('weight')}кг | {c.get('volume')}м3",
+            "arrival": info.get("arrivalPlanDateTime"),
             "payment": "Оплачено" if debt <= 0 else f"Долг: {debt}",
-            "route": f"{clean_name(i.get('sender', {}).get('branchInfo', {}).get('city'), True)} -> {clean_name(i.get('receiver', {}).get('branch', {}).get('city'), True)}"
+            "route": f"{clean_name(i.get('sender', {}).get('branch'), True)} -> {clean_name(i.get('receiver', {}).get('branch', {}).get('city'), True)}"
         })
     return results
 

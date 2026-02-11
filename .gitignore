@@ -28,6 +28,7 @@ my_qr.png
 
 # sublime workspace files (пользовательские настройки IDE)
 *.sublime-workspace
+*.sublime-project
 
 # Временные файлы sublime
 *.swap
