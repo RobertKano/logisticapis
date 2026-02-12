@@ -73,11 +73,16 @@ def send_tg_summary(report_json_path):
             for item in items:
                 # Заменяем стрелочку на более наглядную для мобилки
                 route = item['route'].replace('->', '➡️')
+                p_raw = str(item.get('payment', '')).lower()
+                is_paid = p_raw.startswith('оплаче') and 'к ' not in p_raw
+                pay_icon = "✅" if is_paid else "⚠️"
+                payment_info = "Оплачено" if is_paid else item.get('payment', '').upper()
                 msg += (
                     f"  ├ **№{item['id']}**\n"
-                    f"  ├    _{item['sender']}_\n"
+                    f"  ├ 🚛 _{item['sender']}_\n"
                     f"  ├ 📍 _{route}_\n"
                     f"  ├ ⚖️ _{item['params']}_\n"
+                    f"  ├ {pay_icon} *{payment_info}*\n" # Новая строка с оплатой
                     f"  └ 🏷 Статус: *{item['status']}*\n"
                 )
             msg += "\n"
@@ -85,13 +90,21 @@ def send_tg_summary(report_json_path):
         msg += f"---"
         msg += f"\n_Всего к выдаче: **{ready_count}** шт._"
 
-    # Защита от дублей: проверяем, изменился ли текст сообщения
-    current_hash = hashlib.md5(msg.encode('utf-8')).hexdigest()
+    # 1. Собираем только значимые данные для хеша (ID + статус оплаты)
+    content_to_hash = ""
+    for tk in sorted(grouped_by_tk.keys()):
+        for item in grouped_by_tk[tk]:
+            content_to_hash += f"{item['id']}{item['payment']}"
+
+    # 2. Проверяем хеш именно контента, а не всего сообщения
+    current_hash = hashlib.md5(content_to_hash.encode('utf-8')).hexdigest()
+
     if os.path.exists(st.HASH_FILE):
         with open(st.HASH_FILE, 'r') as f:
             if f.read() == current_hash:
-                print("[Notifier] Состав готовых грузов не изменился. Пропуск отправки.")
+                print("[Notifier] Состав и оплата грузов не изменились. Пропуск.")
                 return
+
 
     # Отправка в Telegram
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"

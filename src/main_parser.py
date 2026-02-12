@@ -121,6 +121,17 @@ def parse_baikal(data):
         weight = sum(float(item.get("cargo", {}).get("weight") or 0) for item in cargo_list)
         volume = sum(float(item.get("cargo", {}).get("volume") or 0) for item in cargo_list)
 
+        # расчет долга и оплаты
+        total = order.get("total") or first_item.get("total", {})
+        total_sum = float(total.get("sum") or 0)
+        total_paid = float(total.get("paid") or 0)
+        debt = round(total_sum - total_paid, 2)
+
+        if debt > 0:
+            payment_status = f"К ОПЛАТЕ: {debt}"
+        else:
+            payment_status = order.get("paidStatus") or "Н/Д"
+
         results.append({
             "tk": "Байкал Сервис",
             "id": order.get("number") or "Н/Д",
@@ -130,7 +141,7 @@ def parse_baikal(data):
             "status": order.get("orderstatus", "Н/Д"),
             "params": f"{places}м | {weight}кг | {volume}м3",
             "arrival": first_item.get('dateArrivalPlane') or order.get('dateArrivalPlane'),
-            "payment": order.get("paidStatus") or "Н/Д",
+            "payment": payment_status,
             "route": f"{clean_name(first_item.get('departure', {}).get('name'), True)} ➡️ {clean_name(first_item.get('destination', {}).get('name'), True)}"
         })
     return results
@@ -138,35 +149,55 @@ def parse_baikal(data):
 def parse_dellin(data):
     results = []
     for o in data.get("orders", []):
-        f = o.get("freight", {})
+        # 1. Извлекаем основной документ (накладную)
+        docs = o.get("documents", [])
+        main_doc = docs[0] if docs else {}
 
+        f = o.get("freight", {})
         sender_data = o.get("sender", {})
         receiver_data = o.get("receiver", {})
         payer_data = o.get("payer", {})
+
+        # --- ЛОГИКА ОПРЕДЕЛЕНИЯ СТАТУСА ОПЛАТЫ ---
+        # У ДЛ есть поле isPaid в корне, но долг точнее в main_doc
+        debt = float(main_doc.get("debtSum") or 0)
+        is_paid_root = o.get("isPaid", False)
+
+        if debt > 0:
+            payment_status = f"К ОПЛАТЕ: {debt}"
+        elif is_paid_root:
+            payment_status = "Оплачено"
+        else:
+            # Если долг 0, но флаг isPaid=False — значит, счет еще не закрыт (ждем проводку)
+            total_sum = main_doc.get("totalSum") or o.get("totalSum", "Н/Д")
+            payment_status = f"К ОПЛАТЕ: {total_sum}"
+        # ------------------------------------------
 
         p_inn = payer_data.get("inn")
         r_inn = receiver_data.get("inn")
 
         if p_inn and r_inn and p_inn == r_inn:
-            payer_type = "recipient"  # Платим мы
+            payer_type = "recipient"
         elif p_inn and p_inn == sender_data.get("inn"):
-            payer_type = "sender"     # Платит отправитель
+            payer_type = "sender"
         else:
-            payer_type = "third_party" # Третье лицо
+            payer_type = "third_party"
 
         results.append({
             "tk": "Деловые Линии",
             "id": o.get("orderId"),
             "sender": clean_name(sender_data.get("name")),
-            "recipient": clean_name(receiver_data.get("name")), # ПОЛУЧАТЕЛЬ
-            "payer_type": payer_type,                           # ТИП ПЛАТЕЛЬЩИКА
+            "recipient": clean_name(receiver_data.get("name")),
+            "payer_type": payer_type,
             "status": f"{o.get('stateName')} ({o.get('progressPercent')}%)",
             "params": f"{f.get('places')}м | {f.get('weight')}кг | {f.get('volume')}м3",
             "arrival": o.get("orderDates", {}).get("arrivalToOspReceiver"),
-            "payment": "Оплачено" if o.get("isPaid") else "Не оплачено",
+            "payment": payment_status, # ЗАМЕНЕНО
             "route": f"{clean_name(o.get('derival', {}).get('terminalCity') or o.get('derival', {}).get('city'), True)} ➡️ {clean_name(o.get('arrival', {}).get('terminalCity') or o.get('arrival', {}).get('city'), True)}"
         })
     return results
+
+
 
 def parse_pecom(data):
     results = []
@@ -174,30 +205,46 @@ def parse_pecom(data):
         c = i.get("cargo", {})
         info = i.get("info", {})
         services = i.get("services", {})
-
         service_items = services.get("items", [])
-        first_service = service_items[0] if service_items else {}
-        p_type_raw = first_service.get("payerType")
 
-        if p_type_raw == 2:
+        # 1. СУММАРНЫЙ ДОЛГ (главный показатель)
+        total_debt = float(services.get("debt", 0))
+
+        # 2. ПРОВЕРКА ПО ВСЕМ УСЛУГАМ (через any)
+        # Ищем, есть ли хоть одна услуга, которую ПЭК пометил как "к оплате при получении"
+        has_unpaid_service = any(s.get("payToReceive") is True for s in service_items)
+
+        # Итоговая логика статуса оплаты:
+        if total_debt <= 0 and not has_unpaid_service:
+            payment_status = "Оплачено"
+        elif total_debt > 0 and not has_unpaid_service:
+            # Кейс, когда долг есть, но он "не блокирующий" (редко, но бывает)
+            payment_status = f"Долг: {total_debt}"
+        else:
+            # Самый критичный случай: есть услуги, помеченные "к оплате"
+            payment_status = f"К ОПЛАТЕ: {total_debt}"
+
+        # ... (логика payer_type остается прежней) ...
+        # Используем .all() для определения payer_type, если хотим быть уверенными,
+        # что плательщик везде один и тот же (обычно это так)
+        p_types = [s.get("payerType") for s in service_items]
+        if all(pt == 2 for pt in p_types):
             payer_type = "recipient"
-        elif p_type_raw == 1:
+        elif all(pt == 1 for pt in p_types):
             payer_type = "sender"
         else:
-            payer_type = "third_party"
-
-        debt = services.get("debt", 0)
+            payer_type = "mixed/third_party"
 
         results.append({
             "tk": "ПЭК",
             "id": c.get("cargoBarCode"),
             "sender": clean_name(i.get("sender", {}).get("sender")),
-            "recipient": clean_name(i.get("receiver", {}).get("receiver")), # ПОЛУЧАТЕЛЬ
-            "payer_type": payer_type,                                       # ТИП ПЛАТЕЛЬЩИКА
+            "recipient": clean_name(i.get("receiver", {}).get("receiver")),
+            "payer_type": payer_type,
             "status": info.get("cargoStatus"),
             "params": f"{int(c.get('amount', 0))}м | {c.get('weight')}кг | {c.get('volume')}м3",
             "arrival": info.get("arrivalPlanDateTime"),
-            "payment": "Оплачено" if debt <= 0 else f"Долг: {debt}",
+            "payment": payment_status, # НАША НОВАЯ ЛОГИКА
             "route": f"{clean_name(i.get('sender', {}).get('branch'), True)} ➡️ {clean_name(i.get('receiver', {}).get('branch', {}).get('city'), True)}"
         })
     return results
