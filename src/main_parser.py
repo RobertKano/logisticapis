@@ -131,7 +131,7 @@ def parse_baikal(data):
             "params": f"{places}м | {weight}кг | {volume}м3",
             "arrival": first_item.get('dateArrivalPlane') or order.get('dateArrivalPlane'),
             "payment": order.get("paidStatus") or "Н/Д",
-            "route": f"{clean_name(first_item.get('departure', {}).get('name'), True)} -> {clean_name(first_item.get('destination', {}).get('name'), True)}"
+            "route": f"{clean_name(first_item.get('departure', {}).get('name'), True)} ➡️ {clean_name(first_item.get('destination', {}).get('name'), True)}"
         })
     return results
 
@@ -164,7 +164,7 @@ def parse_dellin(data):
             "params": f"{f.get('places')}м | {f.get('weight')}кг | {f.get('volume')}м3",
             "arrival": o.get("orderDates", {}).get("arrivalToOspReceiver"),
             "payment": "Оплачено" if o.get("isPaid") else "Не оплачено",
-            "route": f"{clean_name(o.get('derival', {}).get('terminalCity') or o.get('derival', {}).get('city'), True)} -> {clean_name(o.get('arrival', {}).get('terminalCity') or o.get('arrival', {}).get('city'), True)}"
+            "route": f"{clean_name(o.get('derival', {}).get('terminalCity') or o.get('derival', {}).get('city'), True)} ➡️ {clean_name(o.get('arrival', {}).get('terminalCity') or o.get('arrival', {}).get('city'), True)}"
         })
     return results
 
@@ -198,7 +198,7 @@ def parse_pecom(data):
             "params": f"{int(c.get('amount', 0))}м | {c.get('weight')}кг | {c.get('volume')}м3",
             "arrival": info.get("arrivalPlanDateTime"),
             "payment": "Оплачено" if debt <= 0 else f"Долг: {debt}",
-            "route": f"{clean_name(i.get('sender', {}).get('branch'), True)} -> {clean_name(i.get('receiver', {}).get('branch', {}).get('city'), True)}"
+            "route": f"{clean_name(i.get('sender', {}).get('branch'), True)} ➡️ {clean_name(i.get('receiver', {}).get('branch', {}).get('city'), True)}"
         })
     return results
 
