@@ -19,11 +19,21 @@
 
 # Constants, utility functions and variables for project
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(BASE_DIR, ".env")
+load_dotenv(dotenv_path=env_path)
 
 HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'history_archive.json')
 LAST_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'last_active_state.json')
 HASH_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'last_report_hash.txt')
 LOG_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'process.log')
+
+TELEGRAM_CHAT_ID = os.getenv("TG_CHAT_ID", "")
+TELEGRAM_TOKEN = os.getenv("TG_BOT_TOKEN")
 
 CITY_MAP = {
     "астрахань": "АСТРА",
@@ -47,3 +57,10 @@ CITY_MAP = {
     "волгоград": "ВОЛГ",
     "владивосток": "ВЛД"
 }
+
+def main():
+    print(TELEGRAM_CHAT_ID)
+
+
+if __name__ == '__main__':
+    main()

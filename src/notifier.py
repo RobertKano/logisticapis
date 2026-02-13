@@ -2,7 +2,7 @@ import os
 import hashlib
 import requests
 import json
-from pathlib import Path
+# from pathlib import Path
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -11,12 +11,11 @@ import settings as st
 # Загрузка переменных окружения
 load_dotenv()
 
-TELEGRAM_TOKEN = os.getenv("TG_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TG_CHAT_ID")
-# Путь к файлу хеша, чтобы не спамить
-# st.HASH_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'last_report_hash.txt')
+tg_bot_token = st.TELEGRAM_TOKEN
+raw_chat_ids = st.TELEGRAM_CHAT_ID
 
-def send_tg_summary(report_json_path):
+
+def send_tg_summary(report_json_path, force=False):
     """Читает отчет и шлет детализированную сводку только по ГОТОВЫМ грузам"""
     if not os.path.exists(report_json_path):
         print(f"[Notifier] Файл отчета не найден: {report_json_path}")
@@ -99,35 +98,49 @@ def send_tg_summary(report_json_path):
     # 2. Проверяем хеш именно контента, а не всего сообщения
     current_hash = hashlib.md5(content_to_hash.encode('utf-8')).hexdigest()
 
-    if os.path.exists(st.HASH_FILE):
+    if not force and os.path.exists(st.HASH_FILE):
         with open(st.HASH_FILE, 'r') as f:
             if f.read() == current_hash:
                 print("[Notifier] Состав и оплата грузов не изменились. Пропуск.")
                 return
+    if force:
+        print("[Test] Включен режим принудительной отправки (игнорируем хеш).")
 
 
     # Отправка в Telegram
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": msg,
-        "parse_mode": "Markdown"
-    }
+    chat_ids = [cid.strip() for cid in raw_chat_ids.split(",") if cid.strip()]
+    url = f"https://api.telegram.org/bot{tg_bot_token}/sendMessage"
+    success_any = False
 
-    try:
-        r = requests.post(url, json=payload, timeout=10)
-        if r.status_code == 200:
-            with open(st.HASH_FILE, 'w') as f:
-                f.write(current_hash)
-            print(f"[Notifier] Сводка ({ready_count} шт.) отправлена в Telegram.")
-        else:
-            print(f"[Notifier] Ошибка API Telegram: {r.text}")
-    except Exception as e:
-        print(f"[Notifier] Ошибка при отправке запроса: {e}")
+    for chat_id in chat_ids:
+        chat_id = chat_id.strip().replace('"', '').replace("'", "") # Чистим от мусора
+        if not chat_id: continue
+        print(f"[Debug] Пробую отправить в ID: '{chat_id}'")
+        payload = {
+            "chat_id": chat_id,
+            "text": msg,
+            "parse_mode": "Markdown"
+        }
+
+        try:
+            r = requests.post(url, json=payload, timeout=10)
+            if r.status_code == 200:
+                success_any = True
+                print(f"[Notifier] Успешно отправлено в чат: {chat_id}")
+            else:
+                print(f"[Notifier] Ошибка API Telegram для {chat_id}: {r.text}")
+        except Exception as e:
+            print(f"[Notifier] Ошибка связи при отправке в {chat_id}: {e}")
+
+    if success_any:
+        with open(st.HASH_FILE, 'w') as f:
+            f.write(current_hash)
 
 if __name__ == "__main__":
-    # Код для самостоятельного запуска модуля (тест)
     date_str = datetime.now().strftime('%Y-%m-%d')
     path = os.path.join(os.path.dirname(__file__), '..', 'data', f'report_{date_str}.json')
-    print(f"[Test] Запуск нотификатора для файла: {path}")
-    send_tg_summary(path)
+    print("\n[Test System] Запуск нотификатора...")
+    print(f"[-] Файл отчета: {path}")
+    print(f"[-] Целевые чаты: {os.getenv('TG_CHAT_ID')}")
+    send_tg_summary(path, force=True)
+    print("[Test System] Тест завершен.\n")
