@@ -134,7 +134,7 @@ def parse_baikal(data):
 
         results.append({
             "tk": "Байкал Сервис",
-            "id": order.get("number") or "Н/Д",
+            "id": order.get("tracking") or "Н/Д",
             "sender": clean_name(consignor.get("name")),
             "recipient": clean_name(consignee.get("name")),
             "payer_type": payer_type,
