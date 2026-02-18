@@ -21,28 +21,57 @@ function setView(view) {
 }
 
 function copyToClipboard(id, btn) {
-    const list = fullData[currentView] || [];
-    const item = list.find(r => String(r.id) === String(id));
+    // 1. Ищем данные в обоих массивах
+    const item = [...(fullData.active || []), ...(fullData.archive || [])].find(r => String(r.id) === String(id));
     if (!item) return;
 
-    // Определяем текстовую метку оплаты для буфера
+    // 2. Формируем текст (твой шаблон + статус оплаты)
     const pRaw = (item.payment || "").toLowerCase();
     const isPaid = pRaw.startsWith('оплаче') && !pRaw.includes('к ');
-    const paymentStatus = isPaid ? "✅ Оплачено" : `⚠️ ${item.payment.toUpperCase()}`;
+    const payStatus = isPaid ? "✅ Оплачено" : `⚠️ ${item.payment.toUpperCase()}`;
 
-    // Обновленный шаблон:
-    // ТК (Маршрут)
-    // Отправитель (Номер)
-    // Параметры
-    // Статус оплаты
-    const text = `${item.tk} (${item.route})\n${item.sender} (${item.id})\n${item.params}\n${paymentStatus}`;
+    const text = `${item.tk} (${item.route})\n${item.sender} (${item.id})\n${item.params}\n${payStatus}`;
 
-    navigator.clipboard.writeText(text).then(() => {
+    // Функция индикации успеха
+    const showSuccess = () => {
         const oldInner = btn.innerHTML;
         btn.innerHTML = '✅';
         setTimeout(() => { btn.innerHTML = oldInner; }, 1500);
-    });
+    };
+
+    // 3. УНИВЕРСАЛЬНЫЙ МЕТОД (для локальной сети без HTTPS)
+    try {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+
+        // Делаем поле максимально незаметным
+        textArea.style.position = "fixed";
+        textArea.style.left = "-9999px";
+        textArea.style.top = "-9999px";
+        document.body.appendChild(textArea);
+
+        textArea.focus();
+        textArea.select();
+
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+
+        if (successful) {
+            showSuccess();
+        } else {
+            throw new Error('execCommand returned false');
+        }
+    } catch (err) {
+        // Если старый метод не сработал, пробуем современный (для localhost/HTTPS)
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(showSuccess).catch(e => {
+                console.error("Ошибка буфера:", e);
+                alert("Ошибка копирования. Используйте HTTPS или обновите браузер.");
+            });
+        }
+    }
 }
+
 
 
 function renderTable() {
