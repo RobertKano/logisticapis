@@ -348,7 +348,11 @@ def run_main_parser():
 
     # 6. СОХРАНЕНИЕ ОТЧЕТОВ
     date_str = datetime.now().strftime('%Y-%m-%d')
+
+    # Основной отчет для прода (с датой)
     save_json_report(json_data, os.path.join(data_dir, f"report_{date_str}.json"))
+
+    # Отчет для DEV-сервера (всегда свежий статический файл)
     save_json_report(json_data, os.path.join(data_dir, "test_all_tk_processed.json"))
 
     print(f"\n[✓] Обработка завершена. Активно: {len(active)}, Добавлено в архив: {len(to_archive)}")
