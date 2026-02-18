@@ -92,16 +92,14 @@
         }
     </style>
 </head>
-<body>
 
+<body>
     <div class="container-fluid">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
                 <div class="d-flex align-items-center">
                     <div class="status-indicator" id="api-status"><div class="status-pulse"></div></div>
                     <h4 class="m-0 fw-bold">Мониторинг логистики</h4>
-
-
                 </div>
                 <small class="text-muted">Синхронизация: <span id="update-time">—</span></small>
             </div>
@@ -237,7 +235,8 @@
         </div>
     </footer>
 
-<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<!-- <script src="{{ url_for('static', filename='js/main.js') }}"></script> -->
+<script src="{{ url_for('static', filename='js/main.js') }}?v={{ range(1, 999) | random }}"></script>
 </body>
 
 </html>
