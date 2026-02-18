@@ -47,6 +47,20 @@
             background-color: var(--success-green); border-radius: 50%;
             animation: pulse 2s infinite; opacity: 0.6;
         }
+
+        .heavy-badge {
+            color: #f59e0b; /* Оранжевый */
+            font-size: 1.1rem;
+            cursor: help;
+            margin-left: 5px;
+        }
+        .oversize-badge {
+            color: #ef4444; /* Красный */
+            font-size: 1.1rem;
+            cursor: help;
+            margin-left: 5px;
+        }
+
         @keyframes pulse { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(3); opacity: 0; } }
 
         .container-fluid { max-width: 1600px; padding: 2rem; }
@@ -255,7 +269,6 @@
         </div>
     </footer>
 
-<!-- <script src="{{ url_for('static', filename='js/main.js') }}"></script> -->
 <script src="{{ url_for('static', filename='js/main.js') }}?v={{ range(1, 999) | random }}"></script>
 </body>
 

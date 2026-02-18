@@ -132,6 +132,35 @@ function renderTable() {
         tr.setAttribute('data-receiver', (r.recipient || "").toLowerCase());
         if (displayStatus.includes('СКЛАД') || displayStatus.includes('ТК')) tr.classList.add('row-arrived');
 
+                // --- ЛОГИКА ОПРЕДЕЛЕНИЯ ТЯЖЕЛОГО/ГАБАРИТНОГО ГРУЗА ---
+        let heavyIcon = '';
+        let oversizeIcon = '';
+
+        // Вытаскиваем числа из строки типа "1м | 50.0кг | 0.2м3"
+        const params = r.params || "";
+        const weightMatch = params.match(/([\d.]+)\s*кг/);
+        const volumeMatch = params.match(/([\d.]+)\s*м3/);
+        const placesMatch = params.match(/(\d+)\s*м/);
+
+        const weight = weightMatch ? parseFloat(weightMatch[1]) : 0;
+        const volume = volumeMatch ? parseFloat(volumeMatch[1]) : 0;
+        const places = placesMatch ? parseInt(placesMatch[1]) : 1;
+
+        // ЛИМИТЫ (можно подстроить под минивэн)
+        const MAX_WEIGHT_PER_PLACE = 50; // кг на одно место (если больше - одному тяжело)
+        const MAX_TOTAL_VOLUME = 3.5;    // м3 (предел вместимости багажника)
+        const MAX_TOTAL_WEIGHT = 600;    // кг (общий лимит на ход)
+
+        // Проверка на тяжелое место (средний вес одного места)
+        if (weight / places > MAX_WEIGHT_PER_PLACE || weight > MAX_TOTAL_WEIGHT) {
+            heavyIcon = `<span class="heavy-badge" title="Тяжелый груз: ${weight}кг (около ${Math.round(weight/places)}кг/место)">🏋️</span>`;
+        }
+
+        // Проверка на габарит
+        if (volume > MAX_TOTAL_VOLUME) {
+            oversizeIcon = `<span class="oversize-badge" title="Габаритный груз: ${volume}м3 (может не влезть!)">📦⚠️</span>`;
+        }
+
         tr.innerHTML = `
             <td data-label="ТК"><span class="badge-tk" style="${tkStyle}">${r.tk}</span></td>
             <td data-label="№ Накладной">
@@ -141,7 +170,13 @@ function renderTable() {
             <td data-label="Отправитель">${shortenMyName(r.sender)}</td>
             <td data-label="Получатель">${shortenMyName(r.recipient)}</td>
             <td data-label="Маршрут">${r.route}</td>
-            <td data-label="Груз"><small>${r.params}</small></td>
+
+
+            <td data-label="Груз">
+                <small>${r.params}</small>
+                ${heavyIcon} ${oversizeIcon}
+            </td>
+
             <td data-label="Статус" class="fw-bold ${statusClass}">${displayStatus}</td>
             <td data-label="Прибытие" data-date="${rawDate}">
                 <strong>${r.arrival ? r.arrival.split('T')[0] : (r.archived_at || '—')}</strong>
