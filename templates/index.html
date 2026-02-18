@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="Content-Security-Policy" content="block-all-mixed-content">
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <title>Мониторинг ТК | API Data Service</title>
+    <title>DEV SERVER Мониторинг ТК | API Data Service</title>
     <link href="https://fonts.googleapis.com" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
 
@@ -25,6 +25,17 @@
             color: #1e293b;
         }
 
+        .clickable-stat {
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .clickable-stat:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .clickable-stat:active {
+            transform: translateY(0);
+        }
         .status-indicator {
             display: inline-block; width: 10px; height: 10px;
             background-color: var(--success-green); border-radius: 50%;
@@ -48,6 +59,12 @@
         .stat-card:hover { transform: translateY(-3px); }
         .stat-label { font-size: 0.7rem; text-transform: uppercase; font-weight: 600; color: #64748b; letter-spacing: 0.5px; }
         .stat-value { font-size: 1.8rem; font-weight: 700; margin-top: 5px; }
+        .stat-card.active-filter {
+            border-width: 2px !important;
+            transform: scale(1.05); /* Легкий акцент на размер */
+            background-color: #fff; /* Чтобы карточка не сливалась */
+            z-index: 10;
+        }
 
         .table-container {
             background: white; border-radius: 12px;
@@ -114,25 +131,25 @@
 
         <div class="row g-3 mb-4">
             <div class="col-6 col-md-3">
-                <div class="stat-card">
+                <div class="stat-card clickable-stat" onclick="filterByStat('total', this)">
                     <div class="stat-label">Всего активных</div>
                     <div class="stat-value text-dark" id="stat-total">0</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="stat-card" style="border-top: 4px solid var(--success-green);">
+                <div class="stat-card clickable-stat" style="border-top: 4px solid var(--success-green);" onclick="filterByStat('ready', this)">
                     <div class="stat-label">Готово к забору</div>
                     <div class="stat-value text-success" id="stat-ready">0</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="stat-card" style="border-top: 4px solid var(--accent-blue);">
+                <div class="stat-card clickable-stat" style="border-top: 4px solid var(--accent-blue);" onclick="filterByStat('transit', this)">
                     <div class="stat-label">В пути</div>
                     <div class="stat-value text-primary" id="stat-transit">0</div>
                 </div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="stat-card" style="border-top: 4px solid #ef4444;">
+                <div class="stat-card clickable-stat" style="border-top: 4px solid #ef4444;" onclick="filterByStat('debt', this)">
                     <div class="stat-label">Ожидают оплаты</div>
                     <div class="stat-value text-danger" id="stat-debt">0</div>
                 </div>
@@ -193,7 +210,7 @@
             <!-- Левая часть: копирайт -->
             <div class="col-md-6 text-muted small">
                 © 2024-2026 <strong>LogisticAPIs Service</strong><br>
-                Система мониторинга транспортных потоков v1.3.0 (MVP)
+                Система мониторинга транспортных потоков v1.1.0 (MVP)
             </div>
 
             <!-- Правая часть: блок с кнопкой и текстом, выровненный в линию справа -->
@@ -204,6 +221,9 @@
                     <!-- НОВАЯ ССЫЛКА НА ДОКУМЕНТАЦИЮ -->
                     <a href="/docs/" class="text-muted small mr-3" target="_blank" style="text-decoration: underline; opacity: 0.8;">
                         **API Документация**
+                    </a>
+                    <a href="https://github.com/RobertKano/logisticapis/tree/main" class="text-muted small mr-3" target="_blank" style="text-decoration: underline; opacity: 0.8;">
+                        Репозиторий проекта
                     </a>
                     <!-- КОНЕЦ НОВОЙ ССЫЛКИ -->
 

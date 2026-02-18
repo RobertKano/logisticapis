@@ -57,33 +57,53 @@ def update_permanent_archive(new_archive_items):
 
 def clean_name(text, is_city=False):
     if not text or not isinstance(text, str): return "???"
-    cleaned = re.sub(r'\(.*?\)', '', text).lower()
+
+    # 1. Базовая очистка: убираем лишние символы и кавычки СРАЗУ
+    cleaned = text.replace('"', '').replace('«', '').replace('»', '').replace("'", "")
+    cleaned = re.sub(r'\(.*?\)', '', cleaned).lower()
 
     if is_city:
+        # Убираем стандартные приставки
         city_trash = ["г. ", "город ", "пгт. ", "поселок ", "область", "обл.", " край", " р-н", " мо", " г "]
-        for trash in city_trash: cleaned = cleaned.replace(trash, "")
+        for trash in city_trash:
+            cleaned = cleaned.replace(trash, "")
 
         # Сокращаем терминалы и стороны света
-        replacements = {
+        city_replacements = {
             "восток": "ВСТ", "запад": "ЗПД", "север": "СЕВ", "юг": "ЮГ",
-            "терминал": "ТЕРМ", "склад": "СКЛ", "центральный": "ЦЕНТР"
+            "терминал": "ТЕРМ", "склад": "СКЛ", "центральный": "ЦЕНТР",
+            "юго-запад": "Ю-З", "северо-восток": "С-В"
         }
-        for long, short in replacements.items():
+        for long, short in city_replacements.items():
             cleaned = cleaned.replace(long, short)
 
-        cleaned = cleaned.strip()
+        # Маппинг городов из settings.py (Астрахань -> АСТРА и т.д.)
         for full, short in st.CITY_MAP.items():
-            if full in cleaned: cleaned = cleaned.replace(full, short)
+            if full in cleaned:
+                cleaned = cleaned.replace(full, short)
     else:
-        replacements = {
+        # 2. Сокращаем организационные формы
+        org_replacements = {
             "общество с ограниченной ответственностью": "ООО",
             "индивидуальный предприниматель": "ИП",
-            "акционерное общество": "АО"
+            "акционерное общество": "АО",
+            "публичное акционерное общество": "ПАО",
+            "торговый дом": "ТД",
+            "группа компаний": "ГК",
+            "производственное объединение": "ПО"
         }
-        for long, short in replacements.items(): cleaned = cleaned.replace(long, short)
+        for long, short in org_replacements.items():
+            cleaned = cleaned.replace(long, short)
 
-    cleaned = cleaned.replace('"', '').replace('«', '').replace('»', '')
+        # 3. Чистим "информационный шум" в именах компаний
+        # (Убираем слова, которые мешают быстрому поиску)
+        noise_words = ["компания", "корпорация", "предприятие", "лтд", "ltd"]
+        for word in noise_words:
+            cleaned = re.sub(rf'\b{word}\b', '', cleaned)
+
+    # Финальная сборка: убираем лишние пробелы и в UPPER CASE
     return " ".join(cleaned.split()).strip().upper()
+
 
 # --- ОБРАБОТЧИКИ ТК ---
 

@@ -207,6 +207,37 @@ clearBtn.addEventListener('click', function() {
     filterTable();                 // Показываем все строки
 });
 
+function filterByStat(type, element) {
+    const searchInput = document.getElementById('searchInput');
+    const clearBtn = document.getElementById('clearSearch');
+
+    // Сбрасываем стили со всех карточек
+    document.querySelectorAll('.stat-card').forEach(card => {
+        card.classList.remove('active-filter');
+        card.style.borderColor = ""; // Сброс цвета рамки
+    });
+
+    let filterValue = "";
+    if (type === 'ready') filterValue = "Прибыл";
+    if (type === 'transit') filterValue = "В пути";
+    if (type === 'debt') filterValue = "К ОПЛАТЕ";
+
+    searchInput.value = filterValue;
+
+    // Если это не общий сброс, красим рамку в цвет цифр внутри плитки
+    if (type !== 'total' && filterValue !== "") {
+        element.classList.add('active-filter');
+        // Берем цвет у элемента с цифрой (например, .stat-value)
+        const valueColor = window.getComputedStyle(element.querySelector('.stat-value')).color;
+        element.style.borderColor = valueColor;
+    }
+
+    if (clearBtn) clearBtn.style.display = filterValue.length > 0 ? 'block' : 'none';
+    filterTable();
+}
+
+
+
 
 function filterTable() {
     const textFilter = document.getElementById('searchInput').value.toLowerCase();
