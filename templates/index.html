@@ -5,126 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="Content-Security-Policy" content="block-all-mixed-content">
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-    <title>DEV SERVER Мониторинг ТК | API Data Service</title>
+    <title>
+    {% if is_dev %}
+        🚧 [DEV] Мониторинг ТК
+    {% else %}
+        Мониторинг логистики | Южный Форпост
+    {% endif %}
+</title>
     <link href="https://fonts.googleapis.com" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
 
+    <link href="{{ url_for('static', filename='css/style.css') }}{% if is_dev %}?v={{ range(1, 999) | random }}{% else %}?v=1.3{% endif %}" rel="stylesheet">
+
     <style>
-        :root {
-            --brand-blue: #0a2351;
-            --accent-blue: #1a4a9e;
-            --bg-light: #f8fafc;
-            --success-green: #22c55e;
-            --card-shadow: 0 4px 12px rgba(10, 35, 81, 0.08);
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            font-size: 0.85rem;
-            background-color: var(--bg-light);
-            color: #1e293b;
-        }
-
-        .clickable-stat {
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .clickable-stat:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        .clickable-stat:active {
-            transform: translateY(0);
-        }
-        .status-indicator {
-            display: inline-block; width: 10px; height: 10px;
-            background-color: var(--success-green); border-radius: 50%;
-            margin-right: 8px; position: relative;
-        }
-        .status-indicator.loading { background-color: var(--accent-blue); }
-        .status-pulse {
-            position: absolute; width: 100%; height: 100%;
-            background-color: var(--success-green); border-radius: 50%;
-            animation: pulse 2s infinite; opacity: 0.6;
-        }
-
-        .heavy-badge {
-            color: #f59e0b; /* Оранжевый */
-            font-size: 1.1rem;
-            cursor: help;
-            margin-left: 5px;
-        }
-        .oversize-badge {
-            color: #ef4444; /* Красный */
-            font-size: 1.1rem;
-            cursor: help;
-            margin-left: 5px;
-        }
-
-        @keyframes pulse { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(3); opacity: 0; } }
-
-        .container-fluid { max-width: 1600px; padding: 2rem; }
-
-        .stat-card {
-            background: white; border-radius: 12px; padding: 1.25rem;
-            border: 1px solid #e2e8f0; box-shadow: var(--card-shadow);
-            transition: transform 0.2s;
-        }
-        .stat-card:hover { transform: translateY(-3px); }
-        .stat-label { font-size: 0.7rem; text-transform: uppercase; font-weight: 600; color: #64748b; letter-spacing: 0.5px; }
-        .stat-value { font-size: 1.8rem; font-weight: 700; margin-top: 5px; }
-        .stat-card.active-filter {
-            border-width: 2px !important;
-            transform: scale(1.05); /* Легкий акцент на размер */
-            background-color: #fff; /* Чтобы карточка не сливалась */
-            z-index: 10;
-        }
-
-        .table-container {
-            background: white; border-radius: 12px;
-            box-shadow: var(--card-shadow); overflow: hidden;
-            border: 1px solid #e2e8f0;
-        }
-
-        .table thead th {
-            background-color: var(--brand-blue); color: white;
-            font-weight: 500; text-transform: uppercase;
-            font-size: 0.7rem; padding: 15px; border: none;
-        }
-
-        .row-arrived { background-color: #f0fdf4 !important; border-left: 4px solid var(--success-green); }
-        .table-hover tbody tr:hover { background-color: #f1f5f9; }
-
-        .btn-brand { background-color: var(--brand-blue); color: white; border-radius: 8px; font-weight: 500; }
-        .btn-brand:hover { background-color: var(--accent-blue); color: white; }
-
-        .copy-btn {
-            opacity: 0;
-            cursor: pointer;
-            margin-left: 8px;
-            transition: opacity 0.2s;
-            color: var(--accent-blue);
-        }
-        tr:hover .copy-btn {
-            opacity: 1;
-        }
-        .copy-btn:hover {
-            color: #000;
-            transform: scale(1.2);
-        }
-        code { color: var(--accent-blue); background: #f0f7ff; padding: 3px 6px; border-radius: 4px; }
-        .badge-tk { font-weight: 500; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.05); }
-
-        @media (max-width: 768px) {
-            .table thead { display: none; }
-            .table tbody tr { display: block; margin: 15px; border: 1px solid #e2e8f0; border-radius: 12px; background: white; }
-            .table tbody td { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f1f5f9; }
-            .table tbody td::before { content: attr(data-label); font-weight: 600; color: #64748b; }
+        .status-indicator, .status-pulse {
+            background-color: {% if is_dev %}var(--dev-orange){% else %}var(--success-green){% endif %};
         }
     </style>
+
 </head>
 
-<body>
+<body class="bg-light">
     <div class="container-fluid">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div>
@@ -143,6 +44,47 @@
             <button onclick="loadReportData()" class="btn btn-sm btn-brand px-4 shadow-sm" id="refresh-btn">Обновить данные</button>
         </div>
 
+        <!-- АДМИН-ПАНЕЛЬ (Только для DEV режима) -->
+        {% if is_dev %}
+        <div class="container-fluid mb-4" id="admin-marker">
+            <div class="card border-0 shadow-sm" style="border-radius: 12px; background: #fdfdfd; border-left: 5px solid #6366f1 !important;">
+                <div class="card-body p-3">
+                    <h6 class="fw-bold mb-3 text-indigo">📝 Новая памятка (Админ-панель)</h6>
+                    <div class="row g-2">
+                        <div class="col-md-2">
+                            <input type="text" id="m_id" class="form-control form-control-sm" placeholder="№ Накладной">
+                        </div>
+                        <div class="col-md-2">
+                            <input type="text" id="m_sender" class="form-control form-control-sm" placeholder="Отправитель">
+                        </div>
+                        <div class="col-md-2">
+                            <input type="text" id="m_route" class="form-control form-control-sm" placeholder="Маршрут">
+                        </div>
+                        <div class="col-md-3">
+                            <input type="text" id="m_status" class="form-control form-control-sm" placeholder="Комментарий">
+                        </div>
+                        <div class="col-md-2">
+                            <select id="m_priority" class="form-control form-control-sm" style="cursor: pointer;">
+                                <option value="low">⚪ Обычный</option>
+                                <option value="medium">🟡 Важный</option>
+                                <option value="high">🔴 СРОЧНО</option>
+                            </select>
+                        </div>
+                        <div class="col-md-1">
+                            <button onclick="saveManualCargo()" class="btn btn-indigo btn-sm w-100 fw-bold">OK</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style>
+            .text-indigo { color: #6366f1; }
+            .btn-indigo { background: #6366f1; color: white; border: none; }
+            .btn-indigo:hover { background: #4f46e5; color: white; }
+        </style>
+        {% endif %}
+
+        <!-- КАРТОЧКИ СТАТИСТИКИ -->
         <div class="row g-3 mb-4">
             <div class="col-6 col-md-3">
                 <div class="stat-card clickable-stat" onclick="filterByStat('total', this)">
@@ -170,14 +112,13 @@
             </div>
         </div>
 
+        <!-- ФИЛЬТРЫ И ПОИСК -->
         <div class="row g-3 mb-4 align-items-center">
             <div class="col-md-6">
                 <div class="position-relative">
                     <input type="text" id="searchInput" class="form-control border-0 shadow-sm"
                            style="border-radius: 10px; padding: 12px 45px 12px 20px;"
                            placeholder="Поиск по накладной, ТК или городу...">
-
-                    <!-- Кнопка очистки (скрыта по умолчанию) -->
                     <span id="clearSearch" class="position-absolute"
                           style="right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #94a3b8; display: none; font-size: 1.2rem;">
                         &times;
@@ -185,7 +126,6 @@
                 </div>
             </div>
             <div class="col-md-3">
-                <!-- Поле выбора даты -->
                 <input type="date" id="dateFilter" class="form-control border-0 shadow-sm" style="border-radius: 10px; padding: 10px 15px;">
             </div>
             <div class="col-md-3 text-md-end">
@@ -196,6 +136,7 @@
             </div>
         </div>
 
+        <!-- ТАБЛИЦА -->
         <div class="table-container">
             <table class="table table-hover mb-0">
                 <thead>
@@ -218,58 +159,42 @@
         </div>
     </div>
 
-
-    <footer class="container-fluid mt-5 mb-4">
+   <footer class="container-fluid mt-5 mb-4">
         <div class="row border-top pt-4 align-items-center">
             <!-- Левая часть: копирайт -->
-            <div class="col-md-6 text-muted small">
+            <div class="col-md-5 text-muted small text-center text-md-start">
                 © 2024-2026 <strong>LogisticAPIs Service</strong><br>
-                Система мониторинга транспортных потоков v1.1.0 (MVP)
+                <span style="opacity: 0.7;">Система мониторинга транспортных потоков v1.2.0</span>
             </div>
 
-            <!-- Правая часть: блок с кнопкой и текстом, выровненный в линию справа -->
-            <div class="col-md-6 text-md-right text-center mt-3 mt-md-0">
-
-                <div class="d-flex align-items-center justify-content-center justify-content-md-end">
-
-                    <!-- НОВАЯ ССЫЛКА НА ДОКУМЕНТАЦИЮ -->
-                    <a href="/docs/" class="text-muted small mr-3" target="_blank" style="text-decoration: underline; opacity: 0.8;">
-                        **API Документация**
+            <!-- Правая часть: ссылки и кнопка -->
+            <div class="col-md-7 mt-3 mt-md-0">
+                <div class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-end" style="gap: 1.5rem;">
+                    <a href="/docs/" class="text-muted small text-decoration-underline" target="_blank">
+                        API Документация
                     </a>
-                    <a href="https://github.com/RobertKano/logisticapis/tree/main" class="text-muted small mr-3" target="_blank" style="text-decoration: underline; opacity: 0.8;">
-                        Репозиторий проекта
+                    <a href="https://github.com/RobertKano/logisticapis/tree/main" class="text-muted small text-decoration-underline" target="_blank">
+                        Репозиторий
                     </a>
-                    <!-- КОНЕЦ НОВОЙ ССЫЛКИ -->
-
-                    <!-- 1 элемент: "Сервис сэкономил время?" -->
-                    <span class="text-muted small mr-2">Сервис сэкономил время?</span>
-
-                    <!-- 2 элемент: Наша кастомная кнопка (ссылка) -->
                     <a href="https://yoomoney.ru/to/4100119466723517"
                        target="_blank"
-                       class="btn btn-sm text-white mr-2"
-                       style="background-color: #725dff; border-radius: 8px; font-weight: 500;">
-                        Подарить
+                       class="btn btn-sm text-white px-3"
+                       style="background-color: #725dff; border-radius: 10px; font-weight: 500; white-space: nowrap; box-shadow: 0 4px 10px rgba(114, 93, 255, 0.2);">
+                        ☕ Подарить кофе
                     </a>
-
-                    <!-- 3 элемент: "Чашку кофе" -->
-                    <span class="text-muted small">
-                        <strong>Чашку кофе</strong>
-                    </span>
-
                 </div>
             </div>
         </div>
 
-        <!-- Подпись автора -->
-        <div class="text-center mt-4">
-            <small class="text-muted" style="font-size: 0.7rem; opacity: 0.6;">
+        <div class="text-center mt-4" style="opacity: 0.5;">
+            <small class="text-muted" style="font-size: 0.7rem;">
                 Developed with ❤️ by RobertKano
             </small>
         </div>
     </footer>
 
-<script src="{{ url_for('static', filename='js/main.js') }}?v={{ range(1, 999) | random }}"></script>
+    <!-- ПОДКЛЮЧЕНИЕ СКРИПТОВ -->
+    <script src="{{ url_for('static', filename='js/main.js') }}{% if is_dev %}?v={{ range(1, 999) | random }}{% else %}?v=1.4{% endif %}"></script>
 </body>
-
 </html>
+

@@ -1,0 +1,68 @@
+/* static/css/style.css */
+:root {
+    --brand-blue: #0a2351;
+    --accent-blue: #1a4a9e;
+    --bg-light: #f8fafc;
+    --success-green: #22c55e;
+    --dev-orange: #f59e0b;
+    --card-shadow: 0 4px 12px rgba(10, 35, 81, 0.08);
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.85rem;
+    background-color: var(--bg-light);
+    color: #1e293b;
+}
+
+/* Статус-индикатор (база) */
+.status-indicator {
+    display: inline-block; width: 10px; height: 10px;
+    border-radius: 50%; margin-right: 8px; position: relative;
+}
+.status-indicator.loading { background-color: var(--accent-blue) !important; }
+.status-pulse {
+    position: absolute; width: 100%; height: 100%;
+    border-radius: 50%; animation: pulse 2s infinite; opacity: 0.6;
+}
+
+@keyframes pulse { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(3); opacity: 0; } }
+
+/* Специфичные стили для ПАМЯТОК */
+.memo-row { border-left: 5px solid #6366f1 !important; }
+.memo-medium { border-left: 5px solid #f59e0b !important; background-color: #fffbeb !important; }
+.memo-high { border-left: 5px solid #ef4444 !important; background-color: #fff1f2 !important; }
+.row-arrived:not(.memo-high):not(.memo-medium) { background-color: #f0fdf4 !important; }
+
+/* Иконки и бейджи */
+.heavy-badge { color: #f59e0b; margin-left: 5px; cursor: help; font-size: 1.1rem; }
+.oversize-badge { color: #ef4444; margin-left: 5px; cursor: help; font-size: 1.1rem; }
+.badge-tk { font-weight: 500; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.05); }
+.copy-btn { opacity: 0; cursor: pointer; margin-left: 8px; transition: opacity 0.2s; color: var(--accent-blue); }
+tr:hover .copy-btn { opacity: 1; }
+code { color: var(--accent-blue); background: #f0f7ff; padding: 3px 6px; border-radius: 4px; }
+
+/* Контейнеры и карточки */
+.container-fluid { max-width: 1600px; padding: 2rem; }
+.stat-card { background: white; border-radius: 12px; padding: 1.25rem; border: 1px solid #e2e8f0; box-shadow: var(--card-shadow); transition: transform 0.2s; cursor: pointer; }
+.stat-card:hover { transform: translateY(-3px); }
+.stat-card.active-filter { border-width: 2px !important; transform: scale(1.05); z-index: 10; }
+.stat-label { font-size: 0.7rem; text-transform: uppercase; font-weight: 600; color: #64748b; letter-spacing: 0.5px; }
+.stat-value { font-size: 1.8rem; font-weight: 700; margin-top: 5px; }
+
+/* Таблица и стабильность колонок */
+.table-container { background: white; border-radius: 12px; box-shadow: var(--card-shadow); overflow: hidden; border: 1px solid #e2e8f0; }
+.table thead th { background-color: var(--brand-blue); color: white; font-weight: 500; text-transform: uppercase; font-size: 0.7rem; padding: 15px; border: none; vertical-align: middle; }
+.table td { vertical-align: middle; }
+
+/* Чтобы архив не плыл - ограничиваем длинные имена */
+td[data-label="Отправитель"], td[data-label="Получатель"] {
+    max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+    .table thead { display: none; }
+    .table tbody tr { display: block; margin: 15px; border: 1px solid #e2e8f0; border-radius: 12px; background: white; }
+    .table tbody td { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f1f5f9; }
+    .table tbody td::before { content: attr(data-label); font-weight: 600; color: #64748b; }
+}
