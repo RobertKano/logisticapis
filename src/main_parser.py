@@ -16,6 +16,7 @@
 # along with this program.  If not, see <https://www.gnu.org>.
 
 
+import time
 import json
 import os
 import re
@@ -24,36 +25,85 @@ from datetime import datetime
 import settings as st
 
 
+def cleanup_old_reports(data_dir, days=14):
+    """Удаляет отчеты старше N дней, чтобы не захламлять диск"""
+    if not os.path.exists(data_dir):
+        return
+
+    now = time.time()
+    cutoff = now - (days * 86400) # 86400 секунд в сутках
+    deleted_count = 0
+
+    for f in os.listdir(data_dir):
+        # Маска файла: строго report_YYYY-MM-DD.json
+        if f.startswith("report_") and f.endswith(".json"):
+            file_path = os.path.join(data_dir, f)
+            try:
+                # Проверяем дату последнего изменения
+                if os.stat(file_path).st_mtime < cutoff:
+                    os.remove(file_path)
+                    deleted_count += 1
+            except Exception as e:
+                print(f"[Cleanup] Ошибка при удалении {f}: {e}")
+
+    if deleted_count > 0:
+        print(f"[Cleanup] Очистка завершена. Удалено старых отчетов: {deleted_count}")
+
+
 def update_permanent_archive(new_archive_items):
-    """Сохраняет уникальные завершенные заказы в вечный архив"""
+    """Сохраняет уникальные завершенные заказы в вечный архив с подготовкой данных для аналитики"""
+    if not new_archive_items:
+        return
+
     # 1. Читаем существующий архив
+    old_history = []
     if os.path.exists(st.HISTORY_FILE):
         with open(st.HISTORY_FILE, 'r', encoding='utf-8') as f:
             try:
                 old_history = json.load(f)
             except:
                 old_history = []
-    else:
-        old_history = []
 
-    # 2. Создаем набор ID, которые уже есть в архиве (чтобы не дублировать)
+    # 2. Создаем набор ID, которые уже есть в архиве
     existing_ids = {str(item['id']) for item in old_history}
 
-    # 3. Добавляем только те, которых еще нет
+    # 3. Добавляем только новые записи
     added_count = 0
     for item in new_archive_items:
-        if str(item['id']) not in existing_ids:
-            # Добавляем дату перемещения в архив для порядка
+        cargo_id = str(item.get('id', ''))
+        if cargo_id and cargo_id not in existing_ids:
+            # --- ПРЕДПОДГОТОВКА ДЛЯ АНАЛИТИКИ ---
+            params_str = str(item.get('params', ''))
+
+            # Извлекаем ЧИСТЫЙ ВЕС (число)
+            w_match = re.search(r'([\d.]+)\s*кг', params_str)
+            item['weight_num'] = float(w_match.group(1)) if w_match else 0.0
+
+            # Извлекаем ЧИСТЫЙ ОБЪЕМ (число)
+            v_match = re.search(r'([\d.]+)\s*м3', params_str)
+            item['volume_num'] = float(v_match.group(1)) if v_match else 0.0
+
+            # Извлекаем КОЛИЧЕСТВО МЕСТ (целое число)
+            p_match = re.search(r'(\d+)\s*м', params_str)
+            item['places_num'] = int(p_match.group(1)) if p_match else 1
+
+            # Технические поля архива
             item['archived_at'] = datetime.now().strftime('%d.%m.%Y')
+            item['status'] = "Выдан / Архив" # Унифицируем статус для истории
+
             old_history.append(item)
-            existing_ids.add(str(item['id']))
+            existing_ids.add(cargo_id)
             added_count += 1
 
-    # 4. Сохраняем обновленный архив
+    # 4. Сохраняем обновленный архив только если были изменения
     if added_count > 0:
+        # Сортируем архив: новые сверху (по дате архивации)
+        old_history.sort(key=lambda x: datetime.strptime(x['archived_at'], '%d.%m.%Y'), reverse=True)
+
         with open(st.HISTORY_FILE, 'w', encoding='utf-8') as f:
             json.dump(old_history, f, ensure_ascii=False, indent=4)
-        print(f"[Archive] Добавлено новых записей в историю: {added_count}")
+        print(f"[Archive] Успешно добавлено: {added_count} новых записей.")
+
 
 def clean_name(text, is_city=False):
     if not text or not isinstance(text, str): return "???"
@@ -273,7 +323,9 @@ def parse_pecom(data):
 
 def save_report_to_file(report_lines, file_path):
     with open(file_path, 'w', encoding='utf-8') as f:
-        for line in report_lines: f.write(line + '\n')
+        for line in report_lines:
+            f.write(line + '\n')
+
 
 def save_json_report(data, file_path):
     with open(file_path, 'w', encoding='utf-8') as f:
@@ -374,6 +426,8 @@ def run_main_parser():
 
     # Отчет для DEV-сервера (всегда свежий статический файл)
     save_json_report(json_data, os.path.join(data_dir, "test_all_tk_processed.json"))
+
+    cleanup_old_reports(data_dir, days=14)
 
     print(f"\n[✓] Обработка завершена. Активно: {len(active)}, Добавлено в архив: {len(to_archive)}")
 
