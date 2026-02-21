@@ -83,7 +83,7 @@ function renderTable() {
     const shortenMyName = (name) => {
         if (!name) return '—';
         const upper = name.toUpperCase();
-        if (upper.includes("ЮЖНЫЙ ФОРПОСТ") || upper.includes("ТАРИМАГ")) {
+        if (upper.includes("ЮЖНЫЙ ФОРПОСТ")) {
             return '<b style="color: #4f46e5;">МЫ</b>';
         }
         return name;
