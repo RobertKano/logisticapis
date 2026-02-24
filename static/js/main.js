@@ -75,8 +75,12 @@ function renderTable() {
 
     // 1. Сортировка по дате (используем глобальный sortDirection)
     list.sort((a, b) => {
-        const dateA = new Date(a.arrival || (a.archived_at ? a.archived_at.split('.').reverse().join('-') : '2099-12-31'));
-        const dateB = new Date(b.arrival || (b.archived_at ? b.archived_at.split('.').reverse().join('-') : '2099-12-31'));
+        // Извлекаем дату: если это массив - берем первый элемент, если строка - саму строку
+        const getVal = (v) => Array.isArray(v) ? v[0] : (v || '2099-12-31');
+
+        const dateA = new Date(getVal(a.arrival));
+        const dateB = new Date(getVal(b.arrival));
+
         return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
     });
 
@@ -95,15 +99,22 @@ function renderTable() {
         let displayStatus = r.status;
         let statusClass = "text-dark";
 
-        // --- ЛОГИКА ПАМЯТОК И УДАЛЕНИЯ ---
+        // --- ЛОГИКА ПАМЯТОК И УПРАВЛЕНИЯ (Редактирование + Удаление) ---
         let priorityIcon = "";
         let deleteBtn = "";
+
         if (r.is_manual) {
             tr.classList.add('memo-row');
-            // Кнопка удаления (только если на странице есть форма админа)
+
+            // Если на странице есть форма (режим Админа), рисуем кнопки управления
             if (document.getElementById('m_id')) {
-                deleteBtn = `<span class="ms-2" onclick="deleteManualCargo('${r.id}')" style="cursor:pointer; opacity:0.6;" title="Удалить памятку">🗑️</span>`;
+                deleteBtn = `
+                    <span class="ms-2" onclick="editManualCargo('${r.id}')" style="cursor:pointer; color:#6366f1;" title="Редактировать">✏️</span>
+                    <span class="ms-1" onclick="deleteManualCargo('${r.id}')" style="cursor:pointer; opacity:0.6;" title="Удалить памятку">🗑️</span>
+                `;
             }
+
+            // Иконки приоритета для памяток
             if (r.priority === 'high') {
                 tr.classList.add('memo-high');
                 priorityIcon = "🚨 ";
@@ -346,46 +357,101 @@ function filterTable() {
     });
 }
 
-// --- АДМИН-ФУНКЦИИ (Работают только в DEV режиме) ---
+// --- АДМИН-ФУНКЦИИ (Универсальные: Создание + Редактирование + Удаление) ---
 
+// 1. Функция ПОДГОТОВКИ к редактированию (заполняет форму данными из таблицы)
+function editManualCargo(id) {
+    // Ищем данные этой памятки в текущем списке активных грузов
+    const item = (fullData.active || []).find(r => String(r.id) === String(id));
+    if (!item) return;
+
+    // Заполняем все поля формы админки
+    const fields = {
+        'm_edit_id': item.id,
+        'm_id': item.id,
+        'm_sender': item.sender,
+        'm_route': item.route,
+        'm_params': item.params || "",
+        'm_status': item.status,
+        'm_priority': item.priority || 'low'
+    };
+
+    for (const [id, value] of Object.entries(fields)) {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+    }
+
+    // Визуально меняем кнопку "OK" на "Обновить"
+    const btn = document.getElementById('m_btn_save');
+    if (btn) {
+        btn.textContent = "Обновить";
+        btn.classList.remove('btn-indigo');
+        btn.style.backgroundColor = "#f59e0b"; // Оранжевый цвет для режима правки
+        btn.style.color = "#000";
+    }
+
+    // Скроллим вверх к форме, чтобы сразу начать править
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// 2. Универсальная функция СОХРАНЕНИЯ (сама понимает: добавить или обновить)
 async function saveManualCargo() {
-    const mId = document.getElementById('m_id');
-    if (!mId) return; // Защита: если нет формы, функция не работает
+    const editId = document.getElementById('m_edit_id').value;
+
+    // Если есть editId — идем на роут обновления, если нет — на создание
+    const url = editId ? '/admin/update-manual' : '/admin/add-manual';
+    // Если мы редактируем, ищем старый объект, чтобы забрать его дату
+    const oldItem = editId ? (fullData.active || []).find(r => String(r.id) === String(editId)) : null;
 
     const data = {
-        id: mId.value || "MEMO-" + Date.now().toString().slice(-4),
+        id: document.getElementById('m_id').value || "MEMO-" + Date.now().toString().slice(-4),
         sender: document.getElementById('m_sender').value || "ЛИЧНАЯ ЗАМЕТКА",
         recipient: "ЮЖНЫЙ ФОРПОСТ",
         route: document.getElementById('m_route').value || "Н/Д",
+        params: document.getElementById('m_params').value || "1м | 0кг | 0м3",
+        status: document.getElementById('m_status').value,
         priority: document.getElementById('m_priority').value,
-        status: document.getElementById('m_status').value || "Ожидает обработки",
-        params: "Ручной ввод 📝",
-        arrival: new Date().toISOString().split('T')[0],
-        payment: "Не требуется",
-        payer_type: "recipient"
+        is_manual: true,
+        // ВАЖНО: Если редактируем - оставляем старую дату, если новая - ставим сегодня
+        arrival: oldItem ? oldItem.arrival : new Date().toISOString().split('T')[0]
     };
 
     try {
-        const response = await fetch('/admin/add-manual', {
+        const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
 
         if (response.ok) {
-            // Очистка формы
-            ['m_id', 'm_sender', 'm_route', 'm_status'].forEach(id => {
-                document.getElementById(id).value = '';
+            // Сбрасываем форму в исходное состояние
+            document.getElementById('m_edit_id').value = '';
+            const btn = document.getElementById('m_btn_save');
+            if (btn) {
+                btn.textContent = "OK";
+                btn.style.backgroundColor = ""; // Возвращаем исходный цвет из CSS
+                btn.style.color = "";
+                btn.classList.add('btn-indigo');
+            }
+
+            // Очищаем поля ввода
+            ['m_id', 'm_sender', 'm_route', 'm_params'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
             });
-            loadReportData();
+
+            loadReportData(); // Обновляем таблицу, чтобы увидеть изменения
+        } else {
+            alert("Ошибка сохранения: проверьте server.py");
         }
     } catch (error) {
-        console.error("Ошибка сохранения памятки:", error);
+        console.error("Ошибка API:", error);
     }
 }
 
+// 3. Функция УДАЛЕНИЯ
 async function deleteManualCargo(id) {
-    if (!confirm("Удалить эту памятку?")) return;
+    if (!confirm("Удалить эту памятку навсегда?")) return;
 
     try {
         const response = await fetch(`/admin/delete-manual/${id}`, {
@@ -396,6 +462,7 @@ async function deleteManualCargo(id) {
         console.error("Ошибка удаления:", err);
     }
 }
+
 
 // --- ЗАПУСК И СЛУШАТЕЛИ ---
 

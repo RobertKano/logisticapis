@@ -80,6 +80,21 @@ def delete_manual(cargo_id):
         json.dump(data, f, ensure_ascii=False, indent=4)
     return jsonify({"status": "ok"})
 
+@app.route('/admin/update-manual', methods=['POST'])
+def update_manual():
+    if not IS_DEV_MODE:
+        return jsonify({'error': 'Forbidden'}), 403
+
+    updated_item = request.json
+    data = get_manual_data()
+
+    new_data = [updated_item if str(item.get('id')) == str(updated_item.get('id')) else item for item in data]
+
+    with open(MANUAL_FILE, 'w', encoding='utf-8') as f:
+        json.dump(new_data, f, ensure_ascii=False, indent=4)
+
+    return jsonify({"status": "ok"})
+
 @app.route('/docs/')
 @app.route('/docs/<path:filename>')
 def render_docs(filename='index.html'):
