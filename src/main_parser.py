@@ -51,58 +51,51 @@ def cleanup_old_reports(data_dir, days=14):
 
 
 def update_permanent_archive(new_archive_items):
-    """Сохраняет уникальные завершенные заказы в вечный архив с подготовкой данных для аналитики"""
+    """Сохраняет уникальные завершенные заказы в вечный архив, дополняя его"""
     if not new_archive_items:
         return
 
-    # 1. Читаем существующий архив
+    # 1. Читаем существующий архив максимально безопасно
     old_history = []
     if os.path.exists(st.HISTORY_FILE):
-        with open(st.HISTORY_FILE, 'r', encoding='utf-8') as f:
-            try:
-                old_history = json.load(f)
-            except:
-                old_history = []
+        try:
+            with open(st.HISTORY_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if content:
+                    old_history = json.loads(content)
+        except Exception as e:
+            print(f"[Archive Error] Ошибка чтения файла истории: {e}")
+            old_history = []
 
-    # 2. Создаем набор ID, которые уже есть в архиве
-    existing_ids = {str(item['id']) for item in old_history}
+    # 2. Создаем набор существующих ID для мгновенной проверки
+    existing_ids = {str(item.get('id')) for item in old_history if item.get('id')}
 
-    # 3. Добавляем только новые записи
+    # 3. Добавляем только те, которых реально нет в базе
     added_count = 0
     for item in new_archive_items:
         cargo_id = str(item.get('id', ''))
-        if cargo_id and cargo_id not in existing_ids:
-            # --- ПРЕДПОДГОТОВКА ДЛЯ АНАЛИТИКИ ---
-            params_str = str(item.get('params', ''))
 
-            # Извлекаем ЧИСТЫЙ ВЕС (число)
-            w_match = re.search(r'([\d.]+)\s*кг', params_str)
-            item['weight_num'] = float(w_match.group(1)) if w_match else 0.0
+        # Если ID пустой (такого быть не должно) или уже есть в базе - пропускаем
+        if not cargo_id or cargo_id in existing_ids:
+            continue
 
-            # Извлекаем ЧИСТЫЙ ОБЪЕМ (число)
-            v_match = re.search(r'([\d.]+)\s*м3', params_str)
-            item['volume_num'] = float(v_match.group(1)) if v_match else 0.0
+        # Добавляем технические поля
+        item['archived_at'] = datetime.now().strftime('%d.%m.%Y')
+        if 'tk' not in item and item.get('is_manual'):
+            item['tk'] = "📝 ПАМЯТКА"
 
-            # Извлекаем КОЛИЧЕСТВО МЕСТ (целое число)
-            p_match = re.search(r'(\d+)\s*м', params_str)
-            item['places_num'] = int(p_match.group(1)) if p_match else 1
+        old_history.append(item)
+        existing_ids.add(cargo_id)
+        added_count += 1
 
-            # Технические поля архива
-            item['archived_at'] = datetime.now().strftime('%d.%m.%Y')
-            item['status'] = "Выдан / Архив" # Унифицируем статус для истории
-
-            old_history.append(item)
-            existing_ids.add(cargo_id)
-            added_count += 1
-
-    # 4. Сохраняем обновленный архив только если были изменения
+    # 4. Сохраняем ВЕСЬ обновленный список обратно
     if added_count > 0:
-        # Сортируем архив: новые сверху (по дате архивации)
-        old_history.sort(key=lambda x: datetime.strptime(x['archived_at'], '%d.%m.%Y'), reverse=True)
-
-        with open(st.HISTORY_FILE, 'w', encoding='utf-8') as f:
-            json.dump(old_history, f, ensure_ascii=False, indent=4)
-        print(f"[Archive] Успешно добавлено: {added_count} новых записей.")
+        try:
+            with open(st.HISTORY_FILE, 'w', encoding='utf-8') as f:
+                json.dump(old_history, f, ensure_ascii=False, indent=4)
+            print(f"[Archive] Успешно добавлено новых записей: {added_count}. Всего в архиве: {len(old_history)}")
+        except Exception as e:
+            print(f"[Archive Error] Критическая ошибка при записи истории: {e}")
 
 
 def clean_name(text, is_city=False):
@@ -352,6 +345,16 @@ def run_main_parser():
     if "Dellin" in raw_json: raw_results.extend(parse_dellin(raw_json["Dellin"]))
     if "Pecom" in raw_json: raw_results.extend(parse_pecom(raw_json["Pecom"]))
 
+    manual_file = os.path.join(data_dir, 'manual_cargo.json')
+    manual_data = []
+    if os.path.exists(manual_file):
+        with open(manual_file, 'r', encoding='utf-8') as f:
+            try:
+                manual_data = json.load(f)
+                # Добавляем памятки в общий список для проверки статусов
+                raw_results.extend(manual_data)
+            except: pass
+
     # 1. ЛОГИКА "ПАМЯТИ": Сравниваем с прошлым запуском
     current_ids = {str(r['id']) for r in raw_results}
 
@@ -373,12 +376,13 @@ def run_main_parser():
     EXCLUDE = ["выдан", "доставлен", "завершен", "архив", "выдача", "получен"]
 
     active = sorted(
-        [r for r in raw_results if not any(k in str(r['status']).lower() for k in EXCLUDE)],
-        key=lambda x: str(x['arrival'] or "9999")
+        [r for r in raw_results if not any(k in str(r.get('status', '')).lower() for k in EXCLUDE)],
+        key=lambda x: str(x.get('arrival') or "9999")
     )
 
-    # Заказы, которые ПРЯМО СЕЙЧАС в API имеют статус "Выдан"
-    just_finished_api = [r for r in raw_results if any(k in str(r['status']).lower() for k in EXCLUDE)]
+    # Заказы (включая памятки), которые ПРЯМО СЕЙЧАС имеют статус "Выдан"
+    just_finished_api = [r for r in raw_results if any(k in str(r.get('status', '')).lower() for k in EXCLUDE)]
+
 
     # 3. АРХИВАЦИЯ (Объединяем явно выданные и пропавшие из эфира)
     to_archive = just_finished_api + missing_items
@@ -389,10 +393,21 @@ def run_main_parser():
         json.dump(active, f, ensure_ascii=False, indent=4)
 
     # 4. ПОДГОТОВКА ДАННЫХ ДЛЯ ФРОНТЕНДА
+    full_history = []
     if os.path.exists(st.HISTORY_FILE):
         with open(st.HISTORY_FILE, 'r', encoding='utf-8') as f:
-            try: full_history = json.load(f)
-            except: full_history = to_archive
+            try:
+                full_history = json.load(f)
+                # Сортировка с защитой: если даты нет, ставим очень старую
+                full_history.sort(
+                    key=lambda x: datetime.strptime(x.get('archived_at', '01.01.2020'), '%d.%m.%Y'),
+                    reverse=True
+                )
+            except Exception as e:
+                print(f"[Error] Ошибка чтения/сортировки истории: {e}")
+                # Если упали — всё равно берем то, что прочитали, или хотя бы новые
+                if not full_history:
+                    full_history = to_archive
     else:
         full_history = to_archive
 
@@ -417,6 +432,16 @@ def run_main_parser():
         line = (f"{r['tk']:<15} | {str(r['id']):<18} | {str(r['sender'])[:19]:<20} | "
                 f"{str(r['route'])[:24]:<25} | {str(r['status'])[:29]:<30} | {str(r['arrival'] or 'Н/Д')[:10]:<10}")
         print(line)
+
+    # --- НОВОЕ: ЧИСТИМ ПАМЯТКИ, КОТОРЫЕ УШЛИ В АРХИВ ---
+    if manual_data:
+        # Оставляем только те памятки, которые НЕ попали в список "на вылет"
+        active_ids = {str(a['id']) for a in active}
+        remaining_manual = [m for m in manual_data if str(m['id']) in active_ids]
+
+        with open(manual_file, 'w', encoding='utf-8') as f:
+            json.dump(remaining_manual, f, ensure_ascii=False, indent=4)
+        print(f"[Manual] Очистка завершена. Осталось ручных записей: {len(remaining_manual)}")
 
     # 6. СОХРАНЕНИЕ ОТЧЕТОВ
     date_str = datetime.now().strftime('%Y-%m-%d')

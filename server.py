@@ -86,9 +86,10 @@ def update_manual():
         return jsonify({'error': 'Forbidden'}), 403
 
     updated_item = request.json
+    target_id = str(updated_item.get('id'))
     data = get_manual_data()
 
-    new_data = [updated_item if str(item.get('id')) == str(updated_item.get('id')) else item for item in data]
+    new_data = [updated_item if str(item.get('id')) == target_id else item for item in data]
 
     with open(MANUAL_FILE, 'w', encoding='utf-8') as f:
         json.dump(new_data, f, ensure_ascii=False, indent=4)

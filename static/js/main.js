@@ -36,17 +36,28 @@ function setView(view) {
 function copyToClipboard(id, btn) {
     const combined = [...(fullData.active || []), ...(fullData.archive || [])];
     const item = combined.find(r => String(r.id) === String(id));
+
     if (!item) return;
 
-    const pRaw = (item.payment || "").toLowerCase();
-    const isPaid = pRaw.startsWith('оплаче') && !pRaw.includes('к ');
-    const payStatus = isPaid ? "✅ Оплачено" : `⚠️ ${item.payment.toUpperCase()}`;
-    const text = `${item.tk} (${item.route})\n${item.sender} (${item.id})\n${item.params}\n${payStatus}`;
+    const tkName = item.tk || "ТК";
+    const route = item.route || "Маршрут не указан";
+    const sender = item.sender || "Отправитель не указан";
+    const params = item.params || "Параметры не заданы";
+
+    let payStatus = "";
+    if (item.is_manual) {
+        payStatus = `📝 СТАТУС: ${item.status || 'Заметка'}`;
+    } else {
+        const pRaw = (item.payment || "").toLowerCase();
+        const isPaid = pRaw.startsWith('оплаче') && !pRaw.includes('к ');
+        payStatus = isPaid ? "✅ Оплачено" : `⚠️ ${item.payment.toUpperCase()}`;
+    }
+    const text = `${tkName} (${route})\n${sender} (${item.id})\n${params}\n${payStatus}`;
 
     const showSuccess = () => {
-        const oldInner = btn.innerHTML;
+        const old = btn.innerHTML;
         btn.innerHTML = '✅';
-        setTimeout(() => { btn.innerHTML = oldInner; }, 1500);
+        setTimeout(() => btn.innerHTML = old, 1500);
     };
 
     // Fallback для HTTP соединений
@@ -59,7 +70,9 @@ function copyToClipboard(id, btn) {
         const ok = document.execCommand('copy');
         document.body.removeChild(ta);
         if (ok) return showSuccess();
-    } catch (e) {}
+    } catch (e) {
+        console.error("Ошибка копирования", e)
+    }
 
     // Современный метод
     if (navigator.clipboard) {
@@ -73,16 +86,28 @@ function renderTable() {
     let list = [...(fullData[currentView] || [])];
     tbody.innerHTML = '';
 
-    // 1. Сортировка по дате (используем глобальный sortDirection)
     list.sort((a, b) => {
-        // Извлекаем дату: если это массив - берем первый элемент, если строка - саму строку
-        const getVal = (v) => Array.isArray(v) ? v[0] : (v || '2099-12-31');
+        // Упрощенный парсер: превращает любую строку даты в объект Date
+        const toDate = (val) => {
+            if (!val) return new Date(1970, 0, 1); // Если даты нет - в самый низ
 
-        const dateA = new Date(getVal(a.arrival));
-        const dateB = new Date(getVal(b.arrival));
+            // Если дата пришла в старом формате 25.02.2026 (с точками)
+            if (typeof val === 'string' && val.includes('.')) {
+                const [d, m, y] = val.split('.');
+                return new Date(y, m - 1, d);
+            }
 
+            // Если дата в новом формате 2026-02-25 или ISO
+            return new Date(val);
+        };
+
+        const dateA = toDate(a.arrival || a.archived_at);
+        const dateB = toDate(b.arrival || b.archived_at);
+
+        // Стандартное сравнение: asc (старые -> новые), desc (новые -> старые)
         return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
     });
+
 
     const shortenMyName = (name) => {
         if (!name) return '—';
@@ -96,25 +121,21 @@ function renderTable() {
     list.forEach(r => {
         const tr = document.createElement('tr');
         const rawStatus = (r.status || '').toLowerCase();
-        let displayStatus = r.status;
+        let displayStatus = r.status || (currentView === 'archive' ? 'Завершен' : '—');
         let statusClass = "text-dark";
 
-        // --- ЛОГИКА ПАМЯТОК И УПРАВЛЕНИЯ (Редактирование + Удаление) ---
+        // --- ЛОГИКА ПАМЯТОК И УПРАВЛЕНИЯ ---
         let priorityIcon = "";
         let deleteBtn = "";
 
         if (r.is_manual) {
             tr.classList.add('memo-row');
-
-            // Если на странице есть форма (режим Админа), рисуем кнопки управления
             if (document.getElementById('m_id')) {
                 deleteBtn = `
                     <span class="ms-2" onclick="editManualCargo('${r.id}')" style="cursor:pointer; color:#6366f1;" title="Редактировать">✏️</span>
                     <span class="ms-1" onclick="deleteManualCargo('${r.id}')" style="cursor:pointer; opacity:0.6;" title="Удалить памятку">🗑️</span>
                 `;
             }
-
-            // Иконки приоритета для памяток
             if (r.priority === 'high') {
                 tr.classList.add('memo-high');
                 priorityIcon = "🚨 ";
@@ -142,12 +163,30 @@ function renderTable() {
 
         const pRaw = (r.payment || "").toLowerCase();
         const isActuallyPaid = pRaw.startsWith('оплаче') && !pRaw.includes('к ');
-        let pStyle = isActuallyPaid ? "text-success fw-bold" : "badge bg-danger text-white px-2 py-1 shadow-sm";
-        let pDisplay = isActuallyPaid ? "✅ Оплачено" : "⚠️ " + r.payment;
+        // --- ЛОГИКА ОПЛАТЫ (Спокойная для памяток) ---
+        let pStyle = "";
+        let pDisplay = "";
 
+        if (r.is_manual) {
+            // Для ручных памяток делаем серый неброский текст
+            pStyle = "text-muted small italic";
+            pDisplay = "уточнить";
+        } else {
+            // Для официальных грузов ТК оставляем твою боевую логику
+            const pRaw = (r.payment || "").toLowerCase();
+            const isActuallyPaid = pRaw.startsWith('оплаче') && !pRaw.includes('к ');
+
+            pStyle = isActuallyPaid ? "text-success fw-bold" : "badge bg-danger text-white px-2 py-1 shadow-sm";
+            pDisplay = isActuallyPaid ? "✅ Оплачено" : "⚠️ " + (r.payment || "уточнить");
+        }
+
+        // --- ИСПРАВЛЕНИЕ: БЕЗОПАСНЫЙ ТК И СТИЛЬ ---
+        const tkName = r.tk || (r.is_manual ? "📝 ПАМЯТКА" : "—");
         let tkStyle = "background: #f1f5f9; color: #475569;";
-        if(r.tk.includes('ПЭК')) tkStyle = "background: #fef9c3; color: #854d0e; border: 1px solid #fde047;";
-        if(r.tk.includes('Деловые')) tkStyle = "background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe;";
+        if(r.tk) {
+            if(r.tk.includes('ПЭК')) tkStyle = "background: #fef9c3; color: #854d0e; border: 1px solid #fde047;";
+            if(r.tk.includes('Деловые')) tkStyle = "background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe;";
+        }
 
         let payerIcon = r.payer_type === 'recipient' ? '<span class="ms-1" title="Платим мы">⬇️</span>' :
                         r.payer_type === 'sender' ? '<span class="ms-1" title="Платит отправитель">⬆️</span>' :
@@ -164,44 +203,41 @@ function renderTable() {
         const volume = volumeMatch ? parseFloat(volumeMatch[1]) : 0;
         const places = placesMatch ? parseInt(placesMatch[1]) : 1;
 
+        const kettlebellSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" style="fill: #000000; vertical-align: middle;"><path d="M16.2 10.7L16.8 8.3C16.9 8 17.3 6.6 16.5 5.4C15.9 4.5 14.7 4 13 4H11C9.3 4 8.1 4.5 7.5 5.4C6.7 6.6 7.1 7.9 7.2 8.3L7.8 10.7C6.7 11.8 6 13.3 6 15C6 17.1 7.1 18.9 8.7 20H15.3C16.9 18.9 18 17.1 18 15C18 13.3 17.3 11.8 16.2 10.7M9.6 9.5L9.1 7.8V7.7C9.1 7.7 8.9 7 9.2 6.6C9.4 6.2 10 6 11 6H13C13.9 6 14.6 6.2 14.9 6.5C15.2 6.9 15 7.6 15 7.6L14.5 9.5C13.7 9.2 12.9 9 12 9C11.1 9 10.3 9.2 9.6 9.5Z" /></svg>`;
+
         if (weight / places > 35 || weight > 150) {
-            heavyIcon = `<span class="heavy-badge" title="Тяжелый: ${weight}кг">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" style="fill: #000000; vertical-align: middle;">
-                    <path d="M16.2 10.7L16.8 8.3C16.9 8 17.3 6.6 16.5 5.4C15.9 4.5 14.7 4 13 4H11C9.3 4 8.1 4.5 7.5 5.4C6.7 6.6 7.1 7.9 7.2 8.3L7.8 10.7C6.7 11.8 6 13.3 6 15C6 17.1 7.1 18.9 8.7 20H15.3C16.9 18.9 18 17.1 18 15C18 13.3 17.3 11.8 16.2 10.7M9.6 9.5L9.1 7.8V7.7C9.1 7.7 8.9 7 9.2 6.6C9.4 6.2 10 6 11 6H13C13.9 6 14.6 6.2 14.9 6.5C15.2 6.9 15 7.6 15 7.6L14.5 9.5C13.7 9.2 12.9 9 12 9C11.1 9 10.3 9.2 9.6 9.5Z" />
-                </svg>
-            </span>`;
+            heavyIcon = `<span class="heavy-badge" title="Тяжелый: ${weight}кг">${kettlebellSvg}</span>`;
         }
-
         if (volume > 1.5) {
-            oversizeIcon = `<span class="oversize-badge" title="Габаритный: ${volume}м3">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" style="fill: #000000; vertical-align: middle;">
-                    <path d="M16.2 10.7L16.8 8.3C16.9 8 17.3 6.6 16.5 5.4C15.9 4.5 14.7 4 13 4H11C9.3 4 8.1 4.5 7.5 5.4C6.7 6.6 7.1 7.9 7.2 8.3L7.8 10.7C6.7 11.8 6 13.3 6 15C6 17.1 7.1 18.9 8.7 20H15.3C16.9 18.9 18 17.1 18 15C18 13.3 17.3 11.8 16.2 10.7M9.6 9.5L9.1 7.8V7.7C9.1 7.7 8.9 7 9.2 6.6C9.4 6.2 10 6 11 6H13C13.9 6 14.6 6.2 14.9 6.5C15.2 6.9 15 7.6 15 7.6L14.5 9.5C13.7 9.2 12.9 9 12 9C11.1 9 10.3 9.2 9.6 9.5Z" />
-                </svg>
-            </span>`;
+            oversizeIcon = `<span class="oversize-badge" title="Габаритный: ${volume}м3">${kettlebellSvg}</span>`;
         }
 
-        const rawDate = r.arrival ? r.arrival.split('T')[0] : (r.archived_at ? r.archived_at.split('.').reverse().join('-') : '0000-00-00');
+        // --- ИСПРАВЛЕНИЕ ДАТЫ ---
+        const rawDate = r.arrival ? r.arrival.split('T')[0] : (r.archived_at ? (r.archived_at.includes('.') ? r.archived_at.split('.').reverse().join('-') : r.archived_at) : '0000-00-00');
+        const displayDate = r.arrival ? r.arrival.split('T')[0] : (r.archived_at || '—');
+
         tr.setAttribute('data-sender', (r.sender || "").toLowerCase());
         tr.setAttribute('data-receiver', (r.recipient || "").toLowerCase());
 
         tr.innerHTML = `
-            <td data-label="ТК"><span class="badge-tk" style="${tkStyle}">${r.tk}</span></td>
+            <td data-label="ТК"><span class="badge-tk" style="${tkStyle}">${tkName}</span></td>
             <td data-label="№ Накладной">
-                <code>${r.id}</code> ${priorityIcon}${payerIcon}${deleteBtn}
+                <code>${String(r.id || '').split('_')[0]}</code> ${priorityIcon}${payerIcon}${deleteBtn}
                 <span class="copy-btn" onclick="copyToClipboard('${r.id}', this)" title="Копировать">📋</span>
             </td>
             <td data-label="Отправитель">${shortenMyName(r.sender)}</td>
             <td data-label="Получатель">${shortenMyName(r.recipient)}</td>
-            <td data-label="Маршрут">${r.route}</td>
-            <td data-label="Груз"><small>${r.params}</small> ${heavyIcon}${oversizeIcon}</td>
+            <td data-label="Маршрут">${r.route || '—'}</td>
+            <td data-label="Груз"><small>${r.params || '—'}</small> ${heavyIcon}${oversizeIcon}</td>
             <td data-label="Статус" class="fw-bold ${statusClass}">${displayStatus}</td>
             <td data-label="Прибытие" data-date="${rawDate}">
-                <strong>${r.arrival ? r.arrival.split('T')[0] : (r.archived_at || '—')}</strong>
+                <strong>${displayDate}</strong>
             </td>
             <td data-label="Оплата"><span class="${pStyle}">${pDisplay}</span></td>
         `;
         tbody.appendChild(tr);
     });
+
     filterTable();
 }
 
@@ -365,13 +401,30 @@ function editManualCargo(id) {
     const item = (fullData.active || []).find(r => String(r.id) === String(id));
     if (!item) return;
 
-    // Заполняем все поля формы админки
+    // 1. РАЗБОР МАРШРУТА (МСК ➡️ АСТРА)
+    const routeParts = (item.route || "").split(' ➡️ ');
+    const routeFrom = routeParts[0] || "";
+    const routeTo = routeParts[1] || "";
+
+    // 2. РАЗБОР ПАРАМЕТРОВ (3м | 10кг | 0.1м3)
+    const p = item.params || "";
+    const p_m = (p.match(/(\d+)м/) || ['', ''])[1];
+    const p_w = (p.match(/([\d.]+)кг/) || ['', ''])[1];
+    const p_v = (p.match(/([\d.]+)м3/) || ['', ''])[1];
+
+    // 3. Заполняем все поля формы админки
     const fields = {
         'm_edit_id': item.id,
         'm_id': item.id,
         'm_sender': item.sender,
-        'm_route': item.route,
-        'm_params': item.params || "",
+        // Поля маршрута
+        'm_route_from': routeFrom,
+        'm_route_to': routeTo,
+        // Поля параметров
+        'm_p_m': p_m,
+        'm_p_w': p_w,
+        'm_p_v': p_v,
+        // Статус и приоритет
         'm_status': item.status,
         'm_priority': item.priority || 'low'
     };
@@ -381,7 +434,7 @@ function editManualCargo(id) {
         if (el) el.value = value;
     }
 
-    // Визуально меняем кнопку "OK" на "Обновить"
+    // 4. Визуально меняем кнопку "OK" на "Обновить"
     const btn = document.getElementById('m_btn_save');
     if (btn) {
         btn.textContent = "Обновить";
@@ -390,9 +443,10 @@ function editManualCargo(id) {
         btn.style.color = "#000";
     }
 
-    // Скроллим вверх к форме, чтобы сразу начать править
+    // Скроллим вверх к форме
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
 
 // 2. Универсальная функция СОХРАНЕНИЯ (сама понимает: добавить или обновить)
 async function saveManualCargo() {
@@ -402,13 +456,20 @@ async function saveManualCargo() {
     const url = editId ? '/admin/update-manual' : '/admin/add-manual';
     // Если мы редактируем, ищем старый объект, чтобы забрать его дату
     const oldItem = editId ? (fullData.active || []).find(r => String(r.id) === String(editId)) : null;
+    const m = document.getElementById('m_p_m').value || "1";
+    const w = (document.getElementById('m_p_w').value || "0").replace(',', '.');
+    const v = (document.getElementById('m_p_v').value || "0").replace(',', '.');
+    const finalParams = `${m}м | ${w}кг | ${v}м3`;
+    const from = document.getElementById('m_route_from').value || "—";
+    const to = document.getElementById('m_route_to').value || "—";
+    const finalRoute = `${from.toUpperCase()} ➡️ ${to.toUpperCase()}`;
 
     const data = {
         id: document.getElementById('m_id').value || "MEMO-" + Date.now().toString().slice(-4),
         sender: document.getElementById('m_sender').value || "ЛИЧНАЯ ЗАМЕТКА",
         recipient: "ЮЖНЫЙ ФОРПОСТ",
-        route: document.getElementById('m_route').value || "Н/Д",
-        params: document.getElementById('m_params').value || "1м | 0кг | 0м3",
+        route: finalRoute,
+        params: finalParams,
         status: document.getElementById('m_status').value,
         priority: document.getElementById('m_priority').value,
         is_manual: true,
