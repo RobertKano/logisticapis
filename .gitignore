@@ -20,9 +20,6 @@ __pycache__/
 .ruff_cache/
 .uv/
 my_qr.png
-dev_server.py
-dev_main.js
-dev_index.html
 # ==========================================
 # 3. Конфигурационные и служебные файлы
 # ==========================================
@@ -45,13 +42,9 @@ dist/
 data/
 *.egg-info/
 
-chunk.txt
-test_all_tk.json
 api_reg_data.txt
 notes.md
 tasks.md
-draft.md
-draft.py
 # ==========================================
 # 5. Lock-файл (КРИТИЧЕСКИ ВАЖНО)
 # ==========================================

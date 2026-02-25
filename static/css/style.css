@@ -171,7 +171,21 @@ td[data-label="Отправитель"], td[data-label="Получатель"] {
 
 /* Иконки и бейджи */
 .heavy-badge, .oversize-badge { margin-left: 5px; cursor: help; display: inline-block; vertical-align: middle; }
-.badge-tk { font-weight: 500; padding: 5px 10px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.05); }
+
+.badge-tk {
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(0,0,0,0.05);
+
+    /* ФИКС ДЛЯ ДЕЛОВЫХ ЛИНИЙ */
+    white-space: nowrap;      /* Запрещает перенос текста на новую строку */
+    display: inline-block;    /* Позволяет корректно работать с размерами */
+    min-width: 120px;         /* Дает запас места для длинных названий */
+    text-align: center;       /* Центрирует текст внутри бейджа */
+}
+
+
 .copy-btn { opacity: 0; cursor: pointer; margin-left: 8px; transition: opacity 0.2s; color: var(--accent-blue); }
 tr:hover .copy-btn { opacity: 1; }
 code { color: var(--accent-blue); background: #f0f7ff; padding: 3px 6px; border-radius: 4px; }
