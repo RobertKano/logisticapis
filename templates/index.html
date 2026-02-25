@@ -141,28 +141,42 @@
         </div>
 
         <!-- ФИЛЬТРЫ И ПОИСК -->
-        <div class="row g-3 mb-4 align-items-center">
+        <div class="row gx-2 gy-3 mb-4 align-items-center">
+            <!-- Поиск: 6 колонок -->
             <div class="col-md-6">
                 <div class="position-relative">
                     <input type="text" id="searchInput" class="form-control border-0 shadow-sm"
-                           style="border-radius: 10px; padding: 12px 45px 12px 20px;"
+                           style="border-radius: 12px; padding: 12px 20px; height: 48px;"
                            placeholder="Поиск по накладной, ТК или городу...">
-                    <span id="clearSearch" class="position-absolute"
-                          style="right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #94a3b8; display: none; font-size: 1.2rem;">
-                        &times;
-                    </span>
+                    <span id="clearSearch" class="position-absolute" style="right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #94a3b8; display: none; font-size: 1.2rem;">&times;</span>
                 </div>
             </div>
+
+            <!-- Календарь и пресеты: 3 колонки -->
             <div class="col-md-3">
-                <input type="date" id="dateFilter" class="form-control border-0 shadow-sm" style="border-radius: 10px; padding: 10px 15px;">
+                <div class="custom-filter-group">
+                    <span class="ms-1">📅</span>
+                    <input type="date" id="dateFilter" class="form-control form-control-sm" style="width: 100px; font-size: 0.75rem;">
+                    <div class="vr mx-1" style="height: 16px; opacity: 0.1;"></div>
+                    <button class="btn btn-quick" onclick="quickDateFilter('week')">7д</button>
+                    <button class="btn btn-quick" onclick="quickDateFilter('month')">30д</button>
+                </div>
             </div>
+
+            <!-- Переключатель: 3 колонки -->
             <div class="col-md-3 text-md-end">
-                <div class="btn-group shadow-sm bg-white p-1" style="border-radius: 10px;">
-                    <button class="btn btn-light active" id="btn-active" onclick="setView('active')">Активные</button>
-                    <button class="btn btn-light" id="btn-archive" onclick="setView('archive')">Архив</button>
+                <div class="segment-control shadow-sm">
+                    <button class="btn active" id="btn-active" onclick="setView('active')">
+                        Актив <span class="badge" id="count-active">0</span>
+                    </button>
+                    <button class="btn" id="btn-archive" onclick="setView('archive')">
+                        Архив <span class="badge" id="count-archive">0</span>
+                    </button>
                 </div>
             </div>
         </div>
+
+
 
         <!-- ТАБЛИЦА -->
         <div class="table-container">

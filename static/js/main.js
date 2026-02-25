@@ -261,6 +261,13 @@ function loadReportData() {
             // Сохраняем полученные данные в глобальную переменную
             fullData = data;
 
+            if (document.getElementById('count-active')) {
+                document.getElementById('count-active').textContent = (data.active || []).length;
+            }
+            if (document.getElementById('count-archive')) {
+                document.getElementById('count-archive').textContent = (data.archive || []).length;
+            }
+
             // 1. Обновляем время синхронизации
             const timeEl = document.getElementById('update-time');
             if (timeEl) timeEl.textContent = data.metadata?.created_at || "Н/Д";
@@ -371,27 +378,54 @@ function filterByStat(type, element) {
 
 function filterTable() {
     const searchInput = document.getElementById('searchInput');
-    const dateFilter = document.getElementById('dateFilter');
-    if (!searchInput) return;
+    const dateInput = document.getElementById('dateFilter');
+
+    // 1. Базовая проверка на существование элементов
+    if (!searchInput || !dateInput) return;
 
     const textFilter = searchInput.value.toLowerCase();
-    const dFilter = dateFilter ? dateFilter.value : "";
+    const dateValue = dateInput.value; // Используем одно имя для значения даты
 
+    // 2. Сброс быстрых кнопок (7д/30д), если пользователь выбрал конкретную дату в календаре
+    if (dateValue) {
+        window.quickRange = 'all';
+        document.querySelectorAll('.btn-quick').forEach(btn => btn.classList.remove('active'));
+    }
+
+    // 3. Настройки для диапазона (неделя/месяц)
+    const now = new Date();
+    const cutoff = new Date();
+    if (window.quickRange === 'week') cutoff.setDate(now.getDate() - 7);
+    if (window.quickRange === 'month') cutoff.setMonth(now.getMonth() - 1);
+
+    // 4. Основной цикл фильтрации строк
     document.querySelectorAll('#report-table-body tr').forEach(row => {
-        // Умный поиск: текст строки + скрытые оригинальные имена
+        // Поиск по тексту (ТК, номер, отправитель)
         const searchPool = row.textContent.toLowerCase() + " " +
                            (row.getAttribute('data-sender') || "") + " " +
                            (row.getAttribute('data-receiver') || "");
 
-        const dateCell = row.querySelector('[data-date]');
-        const rowDate = dateCell ? dateCell.getAttribute('data-date') : '';
+        // Получаем дату строки из атрибута
+        const rowDateStr = row.querySelector('[data-date]')?.getAttribute('data-date');
+        const rowDate = new Date(rowDateStr);
+
+        let matchesDate = true;
+
+        if (dateValue) {
+            // Фильтр по конкретному дню из календаря
+            matchesDate = rowDateStr === dateValue;
+        } else if (window.quickRange === 'week' || window.quickRange === 'month') {
+            // Фильтр по диапазону (7д или 30д)
+            matchesDate = rowDate >= cutoff && rowDate <= now;
+        }
 
         const matchesText = searchPool.includes(textFilter);
-        const matchesDate = !dFilter || rowDate.includes(dFilter);
 
+        // Показываем строку, только если совпал и ТЕКСТ, и ДАТА
         row.style.display = (matchesText && matchesDate) ? '' : 'none';
     });
 }
+
 
 // --- АДМИН-ФУНКЦИИ (Универсальные: Создание + Редактирование + Удаление) ---
 
@@ -523,6 +557,34 @@ async function deleteManualCargo(id) {
         console.error("Ошибка удаления:", err);
     }
 }
+
+function quickDateFilter(range) {
+    const dateInput = document.getElementById('dateFilter');
+    if (dateInput) dateInput.value = ''; // Сбрасываем календарь
+
+    // 1. Логика переключения состояния (триггер)
+    // Если нажали ту же кнопку — сбрасываем в 'all', если другую — ставим новый range
+    window.quickRange = (window.quickRange === range) ? 'all' : range;
+
+    // 2. Управление подсветкой кнопок
+    const buttons = document.querySelectorAll('.btn-quick');
+    buttons.forEach(btn => {
+        // Убираем активный класс у всех кнопок в начале
+        btn.classList.remove('active');
+
+        // Если фильтр НЕ сброшен, ищем кнопку, на которую нажали, и зажигаем её
+        if (window.quickRange !== 'all') {
+            // Проверяем, содержит ли текст кнопки цифру (7 или 30)
+            if (btn.innerText.includes(range === 'week' ? '7' : '30')) {
+                btn.classList.add('active');
+            }
+        }
+    });
+
+    // 3. Запускаем фильтрацию таблицы
+    filterTable();
+}
+
 
 
 // --- ЗАПУСК И СЛУШАТЕЛИ ---
