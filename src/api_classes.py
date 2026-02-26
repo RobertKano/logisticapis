@@ -17,11 +17,10 @@
 
 
 import os
-from pathlib import Path
 import json
-from datetime import datetime, timedelta
-
 import requests
+from pathlib import Path
+from datetime import datetime, timedelta
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 
@@ -35,7 +34,6 @@ load_dotenv(dotenv_path=env_path)
 # dates for get_period method
 time_for_now = datetime.now()
 time_for_month_ago = time_for_now - timedelta(days=31)
-# time_for_month_ago = time_for_now - timedelta(weeks=5)
 
 # group of secrets constants
 DL_SECRET_KEY = os.getenv("dl_appkey")
