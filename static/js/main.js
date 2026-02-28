@@ -584,7 +584,34 @@ function quickDateFilter(range) {
     // 3. Запускаем фильтрацию таблицы
     filterTable();
 }
+window.onbeforeprint = () => {
+    const printBody = document.getElementById('print-table-body');
+    const printDate = document.getElementById('print-date');
+    if (printDate) printDate.innerText = new Date().toLocaleString();
 
+    printBody.innerHTML = '';
+    const visibleRows = document.querySelectorAll('#report-table-body tr:not([style*="display: none"])');
+
+    visibleRows.forEach(row => {
+        // Проверь индексы под свою таблицу (0-ТК, 2-Отправитель, 5-Параметры)
+        const tk = row.cells[0]?.innerText || "—";
+        const sender = row.cells[2]?.innerText || "—";
+        const params = row.cells[5]?.innerText || "—";
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td style="display: table-cell !important; border: 1px solid #000; padding: 8px 4px; width: 12%; font-size: 8pt; text-align: center;">${tk}</td>
+            <td style="display: table-cell !important; border: 1px solid #000; padding: 8px 6px; width: 35%; font-weight: bold; font-size: 10pt;">${sender}</td>
+
+            <!-- ТУТ УВЕЛИЧИВАЕМ ШРИФТ ПАРАМЕТРОВ ДО 11pt И ДЕЛАЕМ ЖИРНЫМ -->
+            <td style="display: table-cell !important; border: 1px solid #000; padding: 8px 4px; width: 20%; font-size: 11pt; font-weight: bold; text-align: center; white-space: nowrap;">${params}</td>
+
+            <td style="display: table-cell !important; border: 1px solid #000; padding: 8px 4px; width: 8%;"></td>
+            <td style="display: table-cell !important; border: 1px solid #000; padding: 8px 4px; width: 25%;"></td>
+        `;
+        printBody.appendChild(tr);
+    });
+};
 
 
 // --- ЗАПУСК И СЛУШАТЕЛИ ---

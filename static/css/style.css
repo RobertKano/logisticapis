@@ -208,3 +208,37 @@ code { color: var(--accent-blue); background: #f0f7ff; padding: 3px 6px; border-
     .table tbody td { display: flex; justify-content: space-between; padding: 12px; border-bottom: 1px solid #f1f5f9; }
     .table tbody td::before { content: attr(data-label); font-weight: 600; color: #64748b; }
 }
+
+@media print {
+    /* Скрываем вообще всё, что не print-zone */
+    body > *:not(#print-zone) {
+        display: none !important;
+    }
+
+    #print-zone {
+        display: block !important;
+        position: absolute;
+        left: 0; top: 0;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 5mm !important;
+    }
+
+    #print-zone table {
+        display: table !important;
+        width: 100% !important;
+        border-collapse: collapse !important;
+        table-layout: fixed !important;
+    }
+
+    #print-zone thead { display: table-header-group !important; }
+    #print-zone thead th {
+        display: table-cell !important;
+        border: 2px solid #000 !important;
+        background: #f0f0f0 !important;
+        padding: 10px 2px !important;
+        font-size: 9pt !important;
+    }
+
+    #print-zone tbody tr { display: table-row !important; }
+}
