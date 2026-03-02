@@ -3,6 +3,7 @@ name = "Api_data_agregation"
 dynamic = ["version"]
 requires-python = ">=3.12"
 dependencies = [
+    "beautifulsoup4>=4.14.3",
     "flask>=3.1.2",
     ## other dependencies ##
     "python-dotenv>=1.2.1",

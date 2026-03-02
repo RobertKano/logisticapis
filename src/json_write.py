@@ -28,9 +28,12 @@ from api_classes import (
     DL_SECRET_KEY,
     PC_LOGIN,
     PC_SECRET_KEY,
+    VT_LOGIN,
+    VT_PASS,
     BaikalApiV2,
     DellinApiV1,
     PecomApiV1,
+    VitekaApiV1
 )
 
 
@@ -39,10 +42,13 @@ time_for_now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
 p = PecomApiV1(PC_SECRET_KEY, PC_LOGIN)
 d = DellinApiV1(DL_SECRET_KEY, DL_LOGIN, DL_PASS)
 b = BaikalApiV2(BK_SECRET_KEY)
+vt = VitekaApiV1(VT_LOGIN, VT_PASS)
 
 dl_curr_ord = d.orders_info()
 pc_curr_ord = p.fetch_detailed_data_hardcoded()
 bk_curr_ord = b.get_oreders_list()
+print("[Viteka] Начало сбора данных...")
+vt_raw_html_list = vt.get_raw_html_pages(count=2)
 
 list_of_cargo_codes = b.collect_cargocodes()
 bc_detailed_info = [] # Инициализируем как список
@@ -73,6 +79,7 @@ def get_all_data_in_json(dl, pc, bk):
             "Dellin": dl,
             "Pecom": pc,
             "Baikal": bk,
+            "BSD": vt_raw_html_list,
         }
 
         file_path = Path("data/test_all_tk.json")

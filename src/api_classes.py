@@ -23,6 +23,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
+from bs4 import BeautifulSoup
+import re
 
 current_dir = Path.cwd()
 
@@ -45,6 +47,8 @@ PC_LOGIN = os.getenv("pc_login")
 
 BK_SECRET_KEY = os.getenv("bk_appkey")
 
+VT_LOGIN = os.getenv("bsd_login")
+VT_PASS = os.getenv("bsd_pass")
 
 class BaikalApiV2:
     """
@@ -335,16 +339,100 @@ class DellinApiV1:
         return r.json()
 
 
-def main():
-    b = BaikalApiV2(BK_SECRET_KEY)
+class VitekaApiV1:
+    host = "https://123789.ru"
+    url_login = f"{host}/login"
+    url_orders = f"{host}/cabinet/orders"
 
-    list_of_cargo_codes = b.collect_cargocodes()
+    def __init__(self, login, password):
+        self.login = login
+        self.password = password
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+        })
 
-    if list_of_cargo_codes:
-        for i in list_of_cargo_codes:
-            bc_detailed_info = b.get_order_info(i)
-    else:
-        print("Кажется список заказов в ТК Байкал пуст!")
+    def auth(self, retries=3):
+        """Пытаемся войти до 3-х раз с огромным таймаутом"""
+        for attempt in range(1, retries + 1):
+            try:
+                # Огромный таймаут 40 секунд
+                r_init = self.session.get(self.url_login, timeout=40)
+                soup = BeautifulSoup(r_init.text, 'html.parser')
+                token_tag = soup.find('input', {'name': '_token'})
+                if not token_tag: continue
+
+                payload = {
+                    "_token": token_tag['value'],
+                    "login": self.login,
+                    "password": self.password,
+                    "remember": "on"
+                }
+
+                r_post = self.session.post(
+                    self.url_login,
+                    data=payload,
+                    headers={"Referer": self.url_login},
+                    timeout=40
+                )
+
+                if "cabinet" in r_post.url or r_post.status_code == 200:
+                    print(f"[Viteka] Вход выполнен с попытки {attempt}")
+                    return True
+            except Exception as e:
+                print(f"[Viteka] Попытка {attempt} не удалась: {e}")
+                import time
+                time.sleep(2) # Пауза перед ретраем
+        return False
+
+    def get_raw_html_pages(self, count=2):
+        if not self.auth():
+            print("[Viteka] Ошибка: Все попытки авторизации провалены.")
+            return []
+
+        pages = []
+        for p in range(1, count + 1):
+            try:
+                # Тоже увеличиваем до 40с
+                r = self.session.get(f"{self.url_orders}?page={p}", timeout=40)
+                if r.status_code == 200:
+                    pages.append(r.text)
+                import time
+                time.sleep(1.5)
+            except Exception as e:
+                print(f"[Viteka] Ошибка на странице {p}: {e}")
+        return pages
+
+
+# def main():
+#     b = BaikalApiV2(BK_SECRET_KEY)
+
+#     list_of_cargo_codes = b.collect_cargocodes()
+
+#     if list_of_cargo_codes:
+#         for i in list_of_cargo_codes:
+#             bc_detailed_info = b.get_order_info(i)
+#     else:
+#         print("Кажется список заказов в ТК Байкал пуст!")
 
 if __name__ == '__main__':
-    main()
+    # Загружаем твои константы из этого же файла
+    print(f"\n{'='*50}\nТЕСТ КЛАССА ВИТЕКА\n{'='*50}")
+
+    if not VT_LOGIN:
+        print("[!] Ошибка: секреты Витеко не найдены в .env")
+    else:
+        vt_tester = VitekaApiV1(VT_LOGIN, VT_PASS)
+        html_data = vt_tester.get_raw_html_pages(count=2)
+
+        print(f"\nРезультат: получено {len(html_data)} страниц.")
+
+        # Краткая проверка содержимого через BS4 прямо здесь
+        for i, html in enumerate(html_data):
+            soup = BeautifulSoup(html, 'html.parser')
+            rows = soup.select('#orders-table-body tr')
+            print(f"Страница {i+1}: найдено {len(rows)} строк в таблице.")
+            if rows:
+                first_id = rows[0].find('td').get_text(strip=True)
+                print(f"   Первый ID на странице: {first_id}")
+    print(f"{'='*50}\n")
