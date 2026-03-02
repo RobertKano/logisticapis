@@ -118,11 +118,14 @@ function renderTable() {
         return name;
     };
 
+    let totalSum = 0;
+
     list.forEach(r => {
         const tr = document.createElement('tr');
         const rawStatus = (r.status || '').toLowerCase();
         let displayStatus = r.status || (currentView === 'archive' ? 'Завершен' : '—');
         let statusClass = "text-dark";
+        totalSum += parseFloat(r.total_price || 0);
 
         // --- ЛОГИКА ПАМЯТОК И УПРАВЛЕНИЯ ---
         let priorityIcon = "";
@@ -181,12 +184,14 @@ function renderTable() {
         }
 
         // --- ИСПРАВЛЕНИЕ: БЕЗОПАСНЫЙ ТК И СТИЛЬ ---
-        const tkName = r.tk || (r.is_manual ? "📝 ПАМЯТКА" : "—");
+        const tkName = r.tk || (r.is_manual ? "ПАМЯТКА" : "—");
+        const upperTK = tkName.toUpperCase();
+        let tkColorClass = "tk-manual";
         let tkStyle = "background: #f1f5f9; color: #475569;";
-        if(r.tk) {
-            if(r.tk.includes('ПЭК')) tkStyle = "background: #fef9c3; color: #854d0e; border: 1px solid #fde047;";
-            if(r.tk.includes('Деловые')) tkStyle = "background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe;";
-        }
+        if (upperTK.includes('ПЭК')) tkColorClass = "tk-pecom";
+        else if (upperTK.includes('ДЕЛОВЫЕ')) tkColorClass = "tk-dellin";
+        else if (upperTK.includes('БАЙКАЛ')) tkColorClass = "tk-baikal";
+        else if (upperTK.includes('БСД') || upperTK.includes('ВИТЕКА')) tkColorClass = "tk-bsd";
 
         let payerIcon = r.payer_type === 'recipient' ? '<span class="ms-1" title="Платим мы">⬇️</span>' :
                         r.payer_type === 'sender' ? '<span class="ms-1" title="Платит отправитель">⬆️</span>' :
@@ -220,7 +225,7 @@ function renderTable() {
         tr.setAttribute('data-receiver', (r.recipient || "").toLowerCase());
 
         tr.innerHTML = `
-            <td data-label="ТК"><span class="badge-tk" style="${tkStyle}">${tkName}</span></td>
+            <td data-label="ТК"><span class="badge-tk ${tkColorClass}">${tkName}</span></td>
             <td data-label="№ Накладной">
                 <code>${String(r.id || '').split('_')[0]}</code> ${priorityIcon}${payerIcon}${deleteBtn}
                 <span class="copy-btn" onclick="copyToClipboard('${r.id}', this)" title="Копировать">📋</span>
@@ -233,11 +238,25 @@ function renderTable() {
             <td data-label="Прибытие" data-date="${rawDate}">
                 <strong>${displayDate}</strong>
             </td>
-            <td data-label="Оплата"><span class="${pStyle}">${pDisplay}</span></td>
+            <td data-label="Оплата">
+                <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                    <span class="${pStyle}">${pDisplay}</span>
+
+                    <!-- Выводим сумму только если она больше 0 -->
+                    ${r.total_price > 0 ? `
+                        <span style="font-size: 0.72rem; color: #6c757d; font-weight: 600; margin-top: 2px;">
+                            ${parseFloat(r.total_price).toLocaleString('ru-RU')} ₽
+                        </span>
+                    ` : ''}
+                </div>
+            </td>
         `;
         tbody.appendChild(tr);
     });
-
+    const sumDisplay = document.getElementById('total-sum-value');
+    if (sumDisplay) {
+        sumDisplay.innerText = totalSum.toLocaleString('ru-RU') + ' ₽';
+    }
     filterTable();
 }
 

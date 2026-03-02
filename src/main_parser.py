@@ -545,6 +545,16 @@ def parse_viteka(html_list):
             price_clean = re.sub(r'[^\d.]', '', price_raw.replace(',', '.'))
             total_price = float(price_clean) if price_clean else 0.0
 
+            payment_raw = tds[8].get_text(strip=True).lower() # Сразу в нижний регистр для фильтра
+
+            # Унифицируем для фронта:
+            if "не оплачена" in payment_raw:
+                payment_display = "К оплате"
+            elif "оплачена" in payment_raw:
+                payment_display = "Оплачено"
+            else:
+                payment_display = payment_raw.capitalize()
+
             results.append({
                 "tk": "БСД",
                 "id": order_id,
@@ -554,7 +564,7 @@ def parse_viteka(html_list):
                 "status": status_raw.upper(),
                 "params": f"{m_count}М | {w_val}КГ | {v_val}М3",
                 "arrival": arrival,
-                "payment": tds[8].get_text(strip=True).upper(),
+                "payment": payment_display,
                 "total_price": total_price,
                 "payer_type": "recipient",
                 "is_manual": False

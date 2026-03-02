@@ -183,6 +183,29 @@ td[data-label="Отправитель"], td[data-label="Получатель"] {
     display: inline-block;    /* Позволяет корректно работать с размерами */
     min-width: 120px;         /* Дает запас места для длинных названий */
     text-align: center;       /* Центрирует текст внутри бейджа */
+    font-size: 0.7rem !important;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    box-shadow: inset 0 -1px 0 rgba(0,0,0,0.05); /* Легкий объем */
+}
+
+.tk-dellin { background-color: #f1f3f5 !important; color: #495057 !important; border: 1px solid #dee2e6 !important; } /* Светло-серый */
+.tk-pecom  { background-color: #fff5f5 !important; color: #c92a2a !important; border: 1px solid #ffc9c9 !important; } /* Нежно-красный */
+.tk-baikal { background-color: #e7f5ff !important; color: #1971c2 !important; border: 1px solid #a5d8ff !important; } /* Нежно-синий */
+.tk-bsd    { background-color: #fff9db !important; color: #f08c00 !important; border: 1px solid #ffe066 !important; } /* Песочно-оранжевый */
+.tk-manual { background-color: #f4fce3 !important; color: #5c940d !important; border: 1px solid #d8f5a2 !important; } /* Салатовый (памятки) */
+
+/* Стиль для суммы под статусом оплаты */
+td[data-label="Оплата"] .text-muted {
+    font-family: 'Segoe UI Mono', 'Courier New', monospace; /* Моноширинный шрифт для цифр */
+    opacity: 0.8;
+}
+
+/* На мобильных выравниваем по левому краю (если таблица карточками) */
+@media (max-width: 768px) {
+    td[data-label="Оплата"] .d-flex {
+        align-items: flex-start !important;
+    }
 }
 
 
