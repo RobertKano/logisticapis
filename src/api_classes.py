@@ -187,17 +187,27 @@ class PecomApiV1:
             data=json.dumps(self.get_period()),
             auth=self.basicAuth,
             headers=self.headers,
+            timeout=20
         )
         # return r.request.body, r.request.headers, self.url_cargos_list
         return r.json()
 
     def collect_cargocodes(self):
         list_of_cargo_codes = []
+        try:
+            pc_current_orders = self.orders_list()
 
-        pc_current_orders = self.orders_list()
+            # ПРОВЕРКА: Если сервер прислал не JSON или ошибку
+            if not pc_current_orders or 'cargos' not in pc_current_orders:
+                print("[Pecom] Ошибка: Список грузов пуст или некорректен.")
+                return []
 
-        for i in pc_current_orders['cargos']:
-            list_of_cargo_codes.append(i['code'])
+            for i in pc_current_orders['cargos']:
+                # Защита от битых записей внутри списка
+                if i and 'code' in i:
+                    list_of_cargo_codes.append(i['code'])
+        except Exception as e:
+            print(f"[Pecom Error in collect]: {e}")
 
         return list_of_cargo_codes
 
@@ -208,6 +218,7 @@ class PecomApiV1:
             data=json.dumps(data),
             auth=self.basicAuth,
             headers=self.headers,
+            timeout=20
         ).json()
 
     def get_period(self):
@@ -251,6 +262,7 @@ class PecomApiV1:
             data=json.dumps(data),
             auth=self.basicAuth,
             headers=self.headers,
+            timeout=20
         )
         return r.json()
 

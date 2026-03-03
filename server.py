@@ -13,17 +13,6 @@ PORT = 5001 if IS_DEV_MODE else 5000
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 DOCS_PATH = os.path.join(BASE_DIR, 'docs', 'build', 'html')
-MANUAL_FILE = os.path.join(DATA_DIR, 'manual_cargo.json')
-
-# --- ФУНКЦИИ ДАННЫХ ---
-def get_manual_data():
-    """Загружает памятки (только для DEV)."""
-    if IS_DEV_MODE and os.path.exists(MANUAL_FILE):
-        try:
-            with open(MANUAL_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except: return []
-    return []
 
 def get_latest_report():
     date_str = datetime.now().strftime('%Y-%m-%d')
@@ -50,51 +39,11 @@ def index():
 @app.route('/api/latest')
 def api_latest():
     report_data = get_latest_report()
-    manual_items = get_manual_data()
 
     if report_data:
-        # Если есть памятки, подмешиваем их в начало списка active
-        if manual_items:
-            for item in manual_items:
-                item['is_manual'] = True
-                if 'tk' not in item: item['tk'] = "📝 ПАМЯТКА"
-            report_data['active'] = manual_items + report_data['active']
         return jsonify(report_data)
     return jsonify({"status": "error"}), 404
 
-# --- АДМИН-МЕТОДЫ (только для DEV) ---
-@app.route('/admin/add-manual', methods=['POST'])
-def add_manual():
-    if not IS_DEV_MODE: return jsonify({"error": "Forbidden"}), 403
-    data = get_manual_data()
-    data.append(request.json)
-    with open(MANUAL_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-    return jsonify({"status": "ok"})
-
-@app.route('/admin/delete-manual/<cargo_id>', methods=['DELETE'])
-def delete_manual(cargo_id):
-    if not IS_DEV_MODE: return jsonify({"error": "Forbidden"}), 403
-    data = [i for i in get_manual_data() if str(i.get('id')) != str(cargo_id)]
-    with open(MANUAL_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-    return jsonify({"status": "ok"})
-
-@app.route('/admin/update-manual', methods=['POST'])
-def update_manual():
-    if not IS_DEV_MODE:
-        return jsonify({'error': 'Forbidden'}), 403
-
-    updated_item = request.json
-    target_id = str(updated_item.get('id'))
-    data = get_manual_data()
-
-    new_data = [updated_item if str(item.get('id')) == target_id else item for item in data]
-
-    with open(MANUAL_FILE, 'w', encoding='utf-8') as f:
-        json.dump(new_data, f, ensure_ascii=False, indent=4)
-
-    return jsonify({"status": "ok"})
 
 @app.route('/docs/')
 @app.route('/docs/<path:filename>')

@@ -5,6 +5,7 @@
 // 1. Инициализация из памяти браузера (по умолчанию 'asc' для ближайших дат)
 let sortDirection = localStorage.getItem('logisticSortDir') || 'asc';
 let currentView = 'active';
+let isTkGroupingActive = false;
 let fullData = { active: [], archive: [] };
 
 // Проверка режима (по наличию маркера админа в HTML)
@@ -45,13 +46,9 @@ function copyToClipboard(id, btn) {
     const params = item.params || "Параметры не заданы";
 
     let payStatus = "";
-    if (item.is_manual) {
-        payStatus = `📝 СТАТУС: ${item.status || 'Заметка'}`;
-    } else {
-        const pRaw = (item.payment || "").toLowerCase();
-        const isPaid = pRaw.startsWith('оплаче') && !pRaw.includes('к ');
-        payStatus = isPaid ? "✅ Оплачено" : `⚠️ ${item.payment.toUpperCase()}`;
-    }
+    const pRaw = (item.payment || "").toLowerCase();
+    const isPaid = pRaw.startsWith('оплаче') && !pRaw.includes('к ');
+    payStatus = isPaid ? "✅ Оплачено" : `⚠️ ${item.payment.toUpperCase()}`;
     const text = `${tkName} (${route})\n${sender} (${item.id})\n${params}\n${payStatus}`;
 
     const showSuccess = () => {
@@ -83,32 +80,39 @@ function copyToClipboard(id, btn) {
 function renderTable() {
     const tbody = document.getElementById('report-table-body');
     if (!tbody) return;
+
+    // Проверка наличия данных
+    if (!fullData) return;
     let list = [...(fullData[currentView] || [])];
     tbody.innerHTML = '';
 
     list.sort((a, b) => {
-        // Упрощенный парсер: превращает любую строку даты в объект Date
-        const toDate = (val) => {
-            if (!val) return new Date(1970, 0, 1); // Если даты нет - в самый низ
+        // --- 1. ЕСЛИ ВКЛЮЧЕН ТРИГГЕР: Сначала сортируем по ТК (Алфавит) ---
+        if (isTkGroupingActive) {
+            const tkA = (a.tk || "").toUpperCase();
+            const tkB = (b.tk || "").toUpperCase();
+            if (tkA < tkB) return -1;
+            if (tkA > tkB) return 1;
+        }
 
-            // Если дата пришла в старом формате 25.02.2026 (с точками)
+        // --- 2. ВСЕГДА: Сортировка по дате (Твоя базовая логика) ---
+        const toDate = (val) => {
+            if (!val) return new Date(1970, 0, 1);
             if (typeof val === 'string' && val.includes('.')) {
                 const [d, m, y] = val.split('.');
                 return new Date(y, m - 1, d);
             }
-
-            // Если дата в новом формате 2026-02-25 или ISO
             return new Date(val);
         };
-
         const dateA = toDate(a.arrival || a.archived_at);
         const dateB = toDate(b.arrival || b.archived_at);
 
-        // Стандартное сравнение: asc (старые -> новые), desc (новые -> старые)
         return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
     });
 
 
+
+    // 2. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
     const shortenMyName = (name) => {
         if (!name) return '—';
         const upper = name.toUpperCase();
@@ -120,74 +124,62 @@ function renderTable() {
 
     let totalSum = 0;
 
+    // 3. ОТРИСОВКА СТРОК
     list.forEach(r => {
         const tr = document.createElement('tr');
         const rawStatus = (r.status || '').toLowerCase();
         let displayStatus = r.status || (currentView === 'archive' ? 'Завершен' : '—');
         let statusClass = "text-dark";
+
+        // Суммируем стоимость для счетчика
         totalSum += parseFloat(r.total_price || 0);
 
-        // --- ЛОГИКА ПАМЯТОК И УПРАВЛЕНИЯ ---
-        let priorityIcon = "";
-        let deleteBtn = "";
+        // --- МАППИНГ СТАТУСОВ (С ЗАЩИТОЙ ПРОГНОЗА БСД) ---
+                // --- МАППИНГ СТАТУСОВ (БЕЗ ДУБЛЕЙ ИКОНОК) ---
+        const isWaiting = rawStatus.includes('прогноз') || rawStatus.includes('подготовка') || rawStatus.includes('ожидает') || rawStatus.includes('отправка');
 
-        if (r.is_manual) {
-            tr.classList.add('memo-row');
-            if (document.getElementById('m_id')) {
-                deleteBtn = `
-                    <span class="ms-2" onclick="editManualCargo('${r.id}')" style="cursor:pointer; color:#6366f1;" title="Редактировать">✏️</span>
-                    <span class="ms-1" onclick="deleteManualCargo('${r.id}')" style="cursor:pointer; opacity:0.6;" title="Удалить памятку">🗑️</span>
-                `;
-            }
-            if (r.priority === 'high') {
-                tr.classList.add('memo-high');
-                priorityIcon = "🚨 ";
-            } else if (r.priority === 'medium') {
-                tr.classList.add('memo-medium');
-                priorityIcon = "⚠️ ";
-            } else {
-                priorityIcon = "📌 ";
-            }
-        }
+        let icon = "";
 
-        // --- МАППИНГ СТАТУСОВ ---
-        if (rawStatus.includes('прибыл') || rawStatus.includes('готов') || rawStatus.includes('хранение')) {
-            displayStatus = "✅ Прибыл в ТК";
-            statusClass = "text-success";
-            tr.classList.add('row-arrived');
-        } else if (rawStatus.includes('пути') || rawStatus.includes('транзит') || rawStatus.includes('принят')){
-            displayStatus = "🚚 В пути";
+        if (isWaiting) {
+            icon = "🚚 ";
+            displayStatus = r.status; // ПОДГОТОВКА К ОТПРАВКЕ...
             statusClass = "text-primary";
-        } else if (rawStatus.includes('оставк') || rawStatus.includes('до адреса')){
-            displayStatus = "🚚 Доставка ТК ➡️ СКЛАД";
+            tr.classList.remove('row-arrived');
+        }
+        else if (rawStatus.includes('прибыл') || rawStatus.includes('готов') || rawStatus.includes('хранение')) {
+            icon = "✅ ";
+            displayStatus = "Прибыл в ТК";
+            statusClass = "text-success";
+            tr.classList.add('row-arrived');
+        }
+        else if (rawStatus.includes('пути') || rawStatus.includes('транзит') || rawStatus.includes('принят')){
+            icon = "🚚 ";
+            displayStatus = "В пути";
+            statusClass = "text-primary";
+        }
+        else if (rawStatus.includes('оставк') || rawStatus.includes('до адреса')){
+            icon = "🚚 ";
+            displayStatus = "Доставка ТК ➡️ СКЛАД";
             statusClass = "text-success";
             tr.classList.add('row-arrived');
         }
 
+        // Собираем итоговую строку статуса с ОДНОЙ иконкой
+        const finalStatusHtml = `<span class="${statusClass}">${icon}${displayStatus}</span>`;
+
+
+        // --- ЛОГИКА ОПЛАТЫ ---
         const pRaw = (r.payment || "").toLowerCase();
         const isActuallyPaid = pRaw.startsWith('оплаче') && !pRaw.includes('к ');
-        // --- ЛОГИКА ОПЛАТЫ (Спокойная для памяток) ---
-        let pStyle = "";
-        let pDisplay = "";
 
-        if (r.is_manual) {
-            // Для ручных памяток делаем серый неброский текст
-            pStyle = "text-muted small italic";
-            pDisplay = "уточнить";
-        } else {
-            // Для официальных грузов ТК оставляем твою боевую логику
-            const pRaw = (r.payment || "").toLowerCase();
-            const isActuallyPaid = pRaw.startsWith('оплаче') && !pRaw.includes('к ');
+        let pStyle = isActuallyPaid ? "text-success fw-bold" : "badge bg-danger text-white px-2 py-1 shadow-sm";
+        let pDisplay = isActuallyPaid ? "✅ Оплачено" : "⚠️ " + (r.payment || "уточнить");
 
-            pStyle = isActuallyPaid ? "text-success fw-bold" : "badge bg-danger text-white px-2 py-1 shadow-sm";
-            pDisplay = isActuallyPaid ? "✅ Оплачено" : "⚠️ " + (r.payment || "уточнить");
-        }
-
-        // --- ИСПРАВЛЕНИЕ: БЕЗОПАСНЫЙ ТК И СТИЛЬ ---
-        const tkName = r.tk || (r.is_manual ? "ПАМЯТКА" : "—");
+        // --- ТК И СТИЛИ ---
+        const tkName = r.tk || "—";
         const upperTK = tkName.toUpperCase();
         let tkColorClass = "tk-manual";
-        let tkStyle = "background: #f1f5f9; color: #475569;";
+
         if (upperTK.includes('ПЭК')) tkColorClass = "tk-pecom";
         else if (upperTK.includes('ДЕЛОВЫЕ')) tkColorClass = "tk-dellin";
         else if (upperTK.includes('БАЙКАЛ')) tkColorClass = "tk-baikal";
@@ -200,15 +192,15 @@ function renderTable() {
         // --- ГАБАРИТЫ ---
         let heavyIcon = '', oversizeIcon = '';
         const paramsStr = r.params || "";
-        const weightMatch = paramsStr.match(/([\d.]+)\s*кг/);
-        const volumeMatch = paramsStr.match(/([\d.]+)\s*м3/);
-        const placesMatch = paramsStr.match(/(\d+)\s*м/);
+        const weightMatch = paramsStr.match(/([\d.]+)\s*кг/i);
+        const volumeMatch = paramsStr.match(/([\d.]+)\s*м3/i);
+        const placesMatch = paramsStr.match(/(\d+)\s*м/i);
 
         const weight = weightMatch ? parseFloat(weightMatch[1]) : 0;
         const volume = volumeMatch ? parseFloat(volumeMatch[1]) : 0;
         const places = placesMatch ? parseInt(placesMatch[1]) : 1;
 
-        const kettlebellSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" style="fill: #000000; vertical-align: middle;"><path d="M16.2 10.7L16.8 8.3C16.9 8 17.3 6.6 16.5 5.4C15.9 4.5 14.7 4 13 4H11C9.3 4 8.1 4.5 7.5 5.4C6.7 6.6 7.1 7.9 7.2 8.3L7.8 10.7C6.7 11.8 6 13.3 6 15C6 17.1 7.1 18.9 8.7 20H15.3C16.9 18.9 18 17.1 18 15C18 13.3 17.3 11.8 16.2 10.7M9.6 9.5L9.1 7.8V7.7C9.1 7.7 8.9 7 9.2 6.6C9.4 6.2 10 6 11 6H13C13.9 6 14.6 6.2 14.9 6.5C15.2 6.9 15 7.6 15 7.6L14.5 9.5C13.7 9.2 12.9 9 12 9C11.1 9 10.3 9.2 9.6 9.5Z" /></svg>`;
+        const kettlebellSvg = `<svg xmlns="http://www.w3.org" viewBox="0 0 24 24" width="20" height="20" style="fill: #000000; vertical-align: middle;"><path d="M16.2 10.7L16.8 8.3C16.9 8 17.3 6.6 16.5 5.4C15.9 4.5 14.7 4 13 4H11C9.3 4 8.1 4.5 7.5 5.4C6.7 6.6 7.1 7.9 7.2 8.3L7.8 10.7C6.7 11.8 6 13.3 6 15C6 17.1 7.1 18.9 8.7 20H15.3C16.9 18.9 18 17.1 18 15C18 13.3 17.3 11.8 16.2 10.7M9.6 9.5L9.1 7.8V7.7C9.1 7.7 8.9 7 9.2 6.6C9.4 6.2 10 6 11 6H13C13.9 6 14.6 6.2 14.9 6.5C15.2 6.9 15 7.6 15 7.6L14.5 9.5C13.7 9.2 12.9 9 12 9C11.1 9 10.3 9.2 9.6 9.5Z" /></svg>`;
 
         if (weight / places > 35 || weight > 150) {
             heavyIcon = `<span class="heavy-badge" title="Тяжелый: ${weight}кг">${kettlebellSvg}</span>`;
@@ -217,7 +209,7 @@ function renderTable() {
             oversizeIcon = `<span class="oversize-badge" title="Габаритный: ${volume}м3">${kettlebellSvg}</span>`;
         }
 
-        // --- ИСПРАВЛЕНИЕ ДАТЫ ---
+        // --- ДАТЫ ---
         const rawDate = r.arrival ? r.arrival.split('T')[0] : (r.archived_at ? (r.archived_at.includes('.') ? r.archived_at.split('.').reverse().join('-') : r.archived_at) : '0000-00-00');
         const displayDate = r.arrival ? r.arrival.split('T')[0] : (r.archived_at || '—');
 
@@ -227,14 +219,14 @@ function renderTable() {
         tr.innerHTML = `
             <td data-label="ТК"><span class="badge-tk ${tkColorClass}">${tkName}</span></td>
             <td data-label="№ Накладной">
-                <code>${String(r.id || '').split('_')[0]}</code> ${priorityIcon}${payerIcon}${deleteBtn}
+                <code>${String(r.id || '').split('_')[0]}</code> ${payerIcon}
                 <span class="copy-btn" onclick="copyToClipboard('${r.id}', this)" title="Копировать">📋</span>
             </td>
             <td data-label="Отправитель">${shortenMyName(r.sender)}</td>
             <td data-label="Получатель">${shortenMyName(r.recipient)}</td>
             <td data-label="Маршрут">${r.route || '—'}</td>
             <td data-label="Груз"><small>${r.params || '—'}</small> ${heavyIcon}${oversizeIcon}</td>
-            <td data-label="Статус" class="fw-bold ${statusClass}">${displayStatus}</td>
+            <td data-label="Статус" class="fw-bold">${finalStatusHtml}</td>
             <td data-label="Прибытие" data-date="${rawDate}">
                 <strong>${displayDate}</strong>
             </td>
@@ -253,12 +245,18 @@ function renderTable() {
         `;
         tbody.appendChild(tr);
     });
+
+    // 4. ОБНОВЛЕНИЕ ИТОГОВОЙ СУММЫ (если элемент есть)
     const sumDisplay = document.getElementById('total-sum-value');
     if (sumDisplay) {
         sumDisplay.innerText = totalSum.toLocaleString('ru-RU') + ' ₽';
     }
-    filterTable();
+
+    // Запуск фильтрации
+    if (typeof filterTable === 'function') filterTable();
 }
+
+
 
 /**
  * Загрузка данных отчета и обновление статистики плиток
@@ -446,137 +444,6 @@ function filterTable() {
 }
 
 
-// --- АДМИН-ФУНКЦИИ (Универсальные: Создание + Редактирование + Удаление) ---
-
-// 1. Функция ПОДГОТОВКИ к редактированию (заполняет форму данными из таблицы)
-function editManualCargo(id) {
-    // Ищем данные этой памятки в текущем списке активных грузов
-    const item = (fullData.active || []).find(r => String(r.id) === String(id));
-    if (!item) return;
-
-    // 1. РАЗБОР МАРШРУТА (МСК ➡️ АСТРА)
-    const routeParts = (item.route || "").split(' ➡️ ');
-    const routeFrom = routeParts[0] || "";
-    const routeTo = routeParts[1] || "";
-
-    // 2. РАЗБОР ПАРАМЕТРОВ (3м | 10кг | 0.1м3)
-    const p = item.params || "";
-    const p_m = (p.match(/(\d+)м/) || ['', ''])[1];
-    const p_w = (p.match(/([\d.]+)кг/) || ['', ''])[1];
-    const p_v = (p.match(/([\d.]+)м3/) || ['', ''])[1];
-
-    // 3. Заполняем все поля формы админки
-    const fields = {
-        'm_edit_id': item.id,
-        'm_id': item.id,
-        'm_sender': item.sender,
-        // Поля маршрута
-        'm_route_from': routeFrom,
-        'm_route_to': routeTo,
-        // Поля параметров
-        'm_p_m': p_m,
-        'm_p_w': p_w,
-        'm_p_v': p_v,
-        // Статус и приоритет
-        'm_status': item.status,
-        'm_priority': item.priority || 'low'
-    };
-
-    for (const [id, value] of Object.entries(fields)) {
-        const el = document.getElementById(id);
-        if (el) el.value = value;
-    }
-
-    // 4. Визуально меняем кнопку "OK" на "Обновить"
-    const btn = document.getElementById('m_btn_save');
-    if (btn) {
-        btn.textContent = "Обновить";
-        btn.classList.remove('btn-indigo');
-        btn.style.backgroundColor = "#f59e0b"; // Оранжевый цвет для режима правки
-        btn.style.color = "#000";
-    }
-
-    // Скроллим вверх к форме
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-
-// 2. Универсальная функция СОХРАНЕНИЯ (сама понимает: добавить или обновить)
-async function saveManualCargo() {
-    const editId = document.getElementById('m_edit_id').value;
-
-    // Если есть editId — идем на роут обновления, если нет — на создание
-    const url = editId ? '/admin/update-manual' : '/admin/add-manual';
-    // Если мы редактируем, ищем старый объект, чтобы забрать его дату
-    const oldItem = editId ? (fullData.active || []).find(r => String(r.id) === String(editId)) : null;
-    const m = document.getElementById('m_p_m').value || "1";
-    const w = (document.getElementById('m_p_w').value || "0").replace(',', '.');
-    const v = (document.getElementById('m_p_v').value || "0").replace(',', '.');
-    const finalParams = `${m}м | ${w}кг | ${v}м3`;
-    const from = document.getElementById('m_route_from').value || "—";
-    const to = document.getElementById('m_route_to').value || "—";
-    const finalRoute = `${from.toUpperCase()} ➡️ ${to.toUpperCase()}`;
-
-    const data = {
-        id: document.getElementById('m_id').value || "MEMO-" + Date.now().toString().slice(-4),
-        sender: document.getElementById('m_sender').value || "ЛИЧНАЯ ЗАМЕТКА",
-        recipient: "ЮЖНЫЙ ФОРПОСТ",
-        route: finalRoute,
-        params: finalParams,
-        status: document.getElementById('m_status').value,
-        priority: document.getElementById('m_priority').value,
-        is_manual: true,
-        // ВАЖНО: Если редактируем - оставляем старую дату, если новая - ставим сегодня
-        arrival: oldItem ? oldItem.arrival : new Date().toISOString().split('T')[0]
-    };
-
-    try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        });
-
-        if (response.ok) {
-            // Сбрасываем форму в исходное состояние
-            document.getElementById('m_edit_id').value = '';
-            const btn = document.getElementById('m_btn_save');
-            if (btn) {
-                btn.textContent = "OK";
-                btn.style.backgroundColor = ""; // Возвращаем исходный цвет из CSS
-                btn.style.color = "";
-                btn.classList.add('btn-indigo');
-            }
-
-            // Очищаем поля ввода
-            ['m_id', 'm_sender', 'm_route', 'm_params'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.value = '';
-            });
-
-            loadReportData(); // Обновляем таблицу, чтобы увидеть изменения
-        } else {
-            alert("Ошибка сохранения: проверьте server.py");
-        }
-    } catch (error) {
-        console.error("Ошибка API:", error);
-    }
-}
-
-// 3. Функция УДАЛЕНИЯ
-async function deleteManualCargo(id) {
-    if (!confirm("Удалить эту памятку навсегда?")) return;
-
-    try {
-        const response = await fetch(`/admin/delete-manual/${id}`, {
-            method: 'DELETE'
-        });
-        if (response.ok) loadReportData();
-    } catch (err) {
-        console.error("Ошибка удаления:", err);
-    }
-}
-
 function quickDateFilter(range) {
     const dateInput = document.getElementById('dateFilter');
     if (dateInput) dateInput.value = ''; // Сбрасываем календарь
@@ -632,6 +499,28 @@ window.onbeforeprint = () => {
     });
 };
 
+function toggleTkGrouping() {
+    isTkGroupingActive = !isTkGroupingActive;
+
+    const btn = document.getElementById('group-tk-btn');
+    const icon = document.getElementById('group-tk-icon');
+
+    if (isTkGroupingActive) {
+        // Активный режим (Синий текст, иконка списка с точками)
+        btn.style.color = "#4f46e5";
+        btn.style.backgroundColor = "#eef2ff";
+        icon.innerText = "☷";
+        btn.innerHTML = `<span id="group-tk-icon" class="me-1">☷</span> ГРУППА: ВКЛ`;
+    } else {
+        // Обычный режим (Серый текст, иконка плоского списка)
+        btn.style.color = "#64748b";
+        btn.style.backgroundColor = "transparent";
+        icon.innerText = "☰";
+        btn.innerHTML = `<span id="group-tk-icon" class="me-1">☰</span> ГРУППА`;
+    }
+
+    renderTable(); // Перерисовываем
+}
 
 // --- ЗАПУСК И СЛУШАТЕЛИ ---
 

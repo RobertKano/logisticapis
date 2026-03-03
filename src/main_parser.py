@@ -21,6 +21,7 @@ import json
 import os
 import re
 from datetime import datetime
+from datetime import timedelta
 from bs4 import BeautifulSoup
 
 import settings as st
@@ -216,116 +217,6 @@ def parse_baikal(data):
     return results
 
 
-# def parse_baikal(data):
-#     # Если пришел не список или список пуст — возвращаем пустой список результатов
-#     if not data or not isinstance(data, list):
-#         return []
-
-#     results = []
-#     for order in data:
-#         # Проверяем, не заглушка ли это (на всякий случай)
-#         if order.get("status") == "empty":
-#             continue
-
-#         cargo_list = order.get("cargoList", [])
-#         if not cargo_list: continue
-
-#         first_item = cargo_list[0]
-#         consignor = first_item.get("consignor", {})
-#         consignee = first_item.get("consignee", {})
-
-#         services = first_item.get("services", [])
-#         payer_data = services[0].get("payer", {}) if services else {}
-#         payer_inn = payer_data.get("inn")
-
-#         if payer_inn == consignee.get("inn"):
-#             payer_type = "recipient"
-#         elif payer_inn == consignor.get("inn"):
-#             payer_type = "sender"
-#         else:
-#             payer_type = "third_party"
-
-#         # Считаем параметры
-#         places = sum(int(item.get("cargo", {}).get("places") or 0) for item in cargo_list)
-#         weight = sum(float(item.get("cargo", {}).get("weight") or 0) for item in cargo_list)
-#         volume = sum(float(item.get("cargo", {}).get("volume") or 0) for item in cargo_list)
-
-#         # расчет долга и оплаты
-#         total = order.get("total") or first_item.get("total", {})
-#         total_sum = float(total.get("sum") or 0)
-#         total_paid = float(total.get("paid") or 0)
-#         debt = round(total_sum - total_paid, 2)
-
-#         if debt > 0:
-#             payment_status = f"К ОПЛАТЕ: {debt}"
-#         else:
-#             payment_status = order.get("paidStatus") or "Н/Д"
-
-#         results.append({
-#             "tk": "Байкал Сервис",
-#             "id": order.get("tracking") or "Н/Д",
-#             "sender": clean_name(consignor.get("name")),
-#             "recipient": clean_name(consignee.get("name")),
-#             "payer_type": payer_type,
-#             "status": order.get("orderstatus", "Н/Д"),
-#             "params": f"{places}м | {weight}кг | {volume}м3",
-#             "arrival": first_item.get('dateArrivalPlane') or order.get('dateArrivalPlane'),
-#             "payment": payment_status,
-#             "route": f"{clean_name(first_item.get('departure', {}).get('name'), True)} -> {clean_name(first_item.get('destination', {}).get('name'), True)}"
-#         })
-#     return results
-
-# def parse_dellin(data):
-#     results = []
-#     for o in data.get("orders", []):
-#         # 1. Извлекаем основной документ (накладную)
-#         docs = o.get("documents", [])
-#         main_doc = docs[0] if docs else {}
-
-#         f = o.get("freight", {})
-#         sender_data = o.get("sender", {})
-#         receiver_data = o.get("receiver", {})
-#         payer_data = o.get("payer", {})
-
-#         # --- ЛОГИКА ОПРЕДЕЛЕНИЯ СТАТУСА ОПЛАТЫ ---
-#         # У ДЛ есть поле isPaid в корне, но долг точнее в main_doc
-#         debt = float(main_doc.get("debtSum") or 0)
-#         is_paid_root = o.get("isPaid", False)
-
-#         if debt > 0:
-#             payment_status = f"К ОПЛАТЕ: {debt}"
-#         elif is_paid_root:
-#             payment_status = "Оплачено"
-#         else:
-#             # Если долг 0, но флаг isPaid=False — значит, счет еще не закрыт (ждем проводку)
-#             total_sum = main_doc.get("totalSum") or o.get("totalSum", "Н/Д")
-#             payment_status = f"К ОПЛАТЕ: {total_sum}"
-#         # ------------------------------------------
-
-#         p_inn = payer_data.get("inn")
-#         r_inn = receiver_data.get("inn")
-
-#         if p_inn and r_inn and p_inn == r_inn:
-#             payer_type = "recipient"
-#         elif p_inn and p_inn == sender_data.get("inn"):
-#             payer_type = "sender"
-#         else:
-#             payer_type = "third_party"
-
-#         results.append({
-#             "tk": "Деловые Линии",
-#             "id": o.get("orderId"),
-#             "sender": clean_name(sender_data.get("name")),
-#             "recipient": clean_name(receiver_data.get("name")),
-#             "payer_type": payer_type,
-#             "status": f"{o.get('stateName')} ({o.get('progressPercent')}%)",
-#             "params": f"{f.get('places')}м | {f.get('weight')}кг | {f.get('volume')}м3",
-#             "arrival": o.get("orderDates", {}).get("arrivalToOspReceiver"),
-#             "payment": payment_status, # ЗАМЕНЕНО
-#             "route": f"{clean_name(o.get('derival', {}).get('terminalCity') or o.get('derival', {}).get('city'), True)} -> {clean_name(o.get('arrival', {}).get('terminalCity') or o.get('arrival', {}).get('city'), True)}"
-#         })
-#     return results
-
 def parse_dellin(data):
     results = []
     # Работаем через список orders, как в твоем исходнике
@@ -439,56 +330,6 @@ def parse_pecom(data):
         })
     return results
 
-# def parse_pecom(data):
-#     results = []
-#     for i in data.get("cargos", []):
-#         c = i.get("cargo", {})
-#         info = i.get("info", {})
-#         services = i.get("services", {})
-#         service_items = services.get("items", [])
-
-#         # 1. СУММАРНЫЙ ДОЛГ (главный показатель)
-#         total_debt = float(services.get("debt", 0))
-
-#         # 2. ПРОВЕРКА ПО ВСЕМ УСЛУГАМ (через any)
-#         # Ищем, есть ли хоть одна услуга, которую ПЭК пометил как "к оплате при получении"
-#         has_unpaid_service = any(s.get("payToReceive") is True for s in service_items)
-
-#         # Итоговая логика статуса оплаты:
-#         if total_debt <= 0 and not has_unpaid_service:
-#             payment_status = "Оплачено"
-#         elif total_debt > 0 and not has_unpaid_service:
-#             # Кейс, когда долг есть, но он "не блокирующий" (редко, но бывает)
-#             payment_status = f"Долг: {total_debt}"
-#         else:
-#             # Самый критичный случай: есть услуги, помеченные "к оплате"
-#             payment_status = f"К ОПЛАТЕ: {total_debt}"
-
-#         # ... (логика payer_type остается прежней) ...
-#         # Используем .all() для определения payer_type, если хотим быть уверенными,
-#         # что плательщик везде один и тот же (обычно это так)
-#         p_types = [s.get("payerType") for s in service_items]
-#         if all(pt == 2 for pt in p_types):
-#             payer_type = "recipient"
-#         elif all(pt == 1 for pt in p_types):
-#             payer_type = "sender"
-#         else:
-#             payer_type = "mixed/third_party"
-
-#         results.append({
-#             "tk": "ПЭК",
-#             "id": c.get("cargoBarCode"),
-#             "sender": clean_name(i.get("sender", {}).get("sender")),
-#             "recipient": clean_name(i.get("receiver", {}).get("receiver")),
-#             "payer_type": payer_type,
-#             "status": info.get("cargoStatus"),
-#             "params": f"{int(c.get('amount', 0))}м | {c.get('weight')}кг | {c.get('volume')}м3",
-#             "arrival": info.get("arrivalPlanDateTime"),
-#             "payment": payment_status, # НАША НОВАЯ ЛОГИКА
-#             "route": f"{clean_name(i.get('sender', {}).get('branch'), True)} -> {clean_name(i.get('receiver', {}).get('branch', {}).get('city'), True)}"
-#         })
-#     return results
-
 
 def parse_viteka(html_list):
     """Парсинг списка HTML-страниц от Витеко (БСД)"""
@@ -502,36 +343,42 @@ def parse_viteka(html_list):
 
         for row in rows:
             tds = row.find_all('td')
-            # Нам нужно как минимум 12 колонок, чтобы достать цену из tds[11]
-            if len(tds) < 12:
-                continue
+            if len(tds) < 12: continue
 
-            # 1. ID и фильтр "Заявок"
+            # 1. ID и первичный фильтр
             order_id = tds[0].get_text(strip=True).replace(' ', '')
             if not order_id or order_id[0].isdigit():
                 continue
 
-            # 2. Статус и Дата прибытия (Используем разделитель " ", чтобы текст не слипался)
-            status_raw = tds[1].get_text(" ", strip=True)
+            # 2. ОБРАБОТКА СТАТУСА И УМНОЙ ДАТЫ
+            status_raw = tds[1].get_text(" ", strip=True).upper()
 
-            # Улучшенная регулярка для поиска даты DD.MM.YY или DD.MM.YYYY
+            # Ищем подстроку типа "ОЖИДАЕТСЯ 02.03.26" или просто дату
+            date_pattern = r',?\s*ОЖИДАЕТСЯ\s*\d{2}\.\d{2}\.\d{2,4}|\d{2}\.\d{2}\.\d{2,4}'
+
+            # 1. Сохраняем чистый статус БЕЗ даты для JSON
+            clean_status = re.sub(date_pattern, '', status_raw).strip(", ")
+
+            # 2. Ищем дату только для поля 'arrival'
             arrival_match = re.search(r'(\d{2})\.(\d{2})\.(\d{2,4})', status_raw)
-            arrival = "САМОВЫВОЗ"
 
-            if arrival_match:
-                try:
-                    d, m, y = arrival_match.groups()
-                    # Если год 2 цифры (26) -> 2026, если 4 цифры -> оставляем
-                    full_year = f"20{y}" if len(y) == 2 else y
-                    arrival = f"{full_year}-{m}-{d}"
-                except Exception as e:
-                    print(f"[Viteka Date Error]: {e}")
-                    arrival = "Н/Д"
+            if "ОЖИДАЕТ ОТПРАВКИ" in status_raw:
+                future_date = datetime.now() + timedelta(days=4)
+                arrival = future_date.strftime('%Y-%m-%d')
+                display_status = "ОТПРАВКА (+4Д)"
+            elif arrival_match:
+                d, m, y = arrival_match.groups()
+                full_year = f"20{y}" if len(y) == 2 else y
+                arrival = f"{full_year}-{m}-{d}"
+                display_status = clean_status # Теперь тут просто "В ПУТИ"
+            else:
+                arrival = "САМОВЫВОЗ"
+                display_status = clean_status
 
-            # 3. Параметры (Вес, Объем, Места) из 4-й колонки
+
+            # 3. Параметры (Вес, Объем, Места)
             p_div = tds[3]
             def get_val(label):
-                # Ищем span по тексту метки и берем следующее значение
                 found = p_div.find('span', string=re.compile(label))
                 return found.find_next('span').get_text(strip=True) if found else "0"
 
@@ -539,15 +386,13 @@ def parse_viteka(html_list):
             w_val = get_val("Вес:").replace('кг', '').strip()
             v_val = get_val("Объем:").replace('м3', '').strip()
 
-            # 4. Сборка объекта БСД
-            # Цена из 12-й колонки (индекс 11)
+            # 4. Цена и Оплата
             price_raw = tds[11].get_text(strip=True)
             price_clean = re.sub(r'[^\d.]', '', price_raw.replace(',', '.'))
             total_price = float(price_clean) if price_clean else 0.0
 
-            payment_raw = tds[8].get_text(strip=True).lower() # Сразу в нижний регистр для фильтра
-
-            # Унифицируем для фронта:
+            # Унификация оплаты для фильтров
+            payment_raw = tds[8].get_text(strip=True).lower()
             if "не оплачена" in payment_raw:
                 payment_display = "К оплате"
             elif "оплачена" in payment_raw:
@@ -556,12 +401,12 @@ def parse_viteka(html_list):
                 payment_display = payment_raw.capitalize()
 
             results.append({
-                "tk": "БСД",
+                "tk": "БСД", # Всегда БСД для архива
                 "id": order_id,
                 "sender": clean_name(tds[6].get_text(strip=True)),
                 "recipient": clean_name(tds[7].find('a').get_text(strip=True) if tds[7].find('a') else "ЮЖНЫЙ ФОРПОСТ"),
                 "route": f"{clean_name(tds[4].get_text(strip=True), True)} -> {clean_name(tds[5].get_text(strip=True), True)}",
-                "status": status_raw.upper(),
+                "status": display_status,
                 "params": f"{m_count}М | {w_val}КГ | {v_val}М3",
                 "arrival": arrival,
                 "payment": payment_display,
@@ -569,121 +414,6 @@ def parse_viteka(html_list):
                 "payer_type": "recipient",
                 "is_manual": False
             })
-    return results
-
-
-
-# def parse_viteka(html_list):
-#     """Парсинг списка HTML-страниц от Витеко"""
-#     results = []
-#     if not html_list or not isinstance(html_list, list):
-#         print("[Parser] Viteka: Список HTML пуст, парсить нечего.")
-#         return results
-
-#     for html in html_list:
-#         soup = BeautifulSoup(html, 'html.parser')
-#         rows = soup.select('#orders-table-body tr')
-
-#         for row in rows:
-#             tds = row.find_all('td')
-#             if len(tds) < 10:
-#                 continue
-
-#             # 1. ID и первичный фильтр "Заявок"
-#             order_id = tds[0].get_text(strip=True).replace(' ', '')
-#             # Проверка на первый символ-цифру (заявка)
-#             if not order_id or order_id[0].isdigit():
-#                 continue
-
-#             # 2. Статус и Дата прибытия
-#             status_raw = tds[1].get_text(" ", strip=True)
-#             arrival_match = re.search(r'(\d{2})\.(\d{2})\.(\d{2})', status_raw)
-
-#             arrival = "САМОВЫВОЗ"
-#             if arrival_match:
-#                 try:
-#                     day, month, year = arrival_match.groups()
-#                     full_year = f"20{year}" if len(year) == 2 else year
-#                     arrival = f"{full_year}-{month}-{day}"
-#                 except Exception as e:
-#                     print(f"[Viteka Date Error]: {e}")
-#                     arrival = "Н/Д"
-
-#             # 3. Параметры (Вес, Объем, Места)
-#             p_div = tds[3]
-#             def get_val(label):
-#                 found = p_div.find('span', string=re.compile(label))
-#                 return found.find_next('span').get_text(strip=True) if found else "0"
-
-#             m = get_val("Кол-во мест:")
-#             w = get_val("Вес:").replace('кг', '').strip()
-#             v = get_val("Объем:").replace('м3', '').strip()
-
-#             # 4. Сборка с применением твоей функции clean_name
-#             # Чистим отправителя и получателя от кавычек/ООО
-#             sender_clean = clean_name(tds[6].get_text(strip=True))
-
-#             recipient_raw = tds[7].find('a').get_text(strip=True) if tds[7].find('a') else "ЮЖНЫЙ ФОРПОСТ"
-#             recipient_clean = clean_name(recipient_raw)
-
-#             # Сокращаем города в маршруте (is_city=True)
-#             city_from = clean_name(tds[4].get_text(strip=True), is_city=True)
-#             city_to = clean_name(tds[5].get_text(strip=True), is_city=True)
-
-#             results.append({
-#                 "tk": "БСД",
-#                 "id": order_id,
-#                 "sender": sender_clean,
-#                 "recipient": recipient_clean,
-#                 "route": f"{city_from} -> {city_to}",
-#                 "status": status_raw.upper(),
-#                 "params": f"{m}М | {w}КГ | {v}М3",
-#                 "arrival": arrival,
-#                 "payment": tds[8].get_text(strip=True).upper(), # Тоже в UPPER для стиля
-#                 "is_manual": False
-#             })
-#     return results
-
-
-def parse_manual(manual_list):
-    results = []
-    if not manual_list: return results
-
-    for m in manual_list:
-        try:
-            m_id = str(m.get('id', '')).strip()
-            if not m_id: continue
-
-            # Чистим текст
-            sender = clean_name(m.get('sender', 'БЕЗ ОТПРАВИТЕЛЯ'))
-            recipient = clean_name(m.get('recipient', 'ЮЖНЫЙ ФОРПОСТ'))
-
-            # РАЗБИРАЕМ МАРШРУТ (Защита от дублей)
-            raw_route = m.get('route', 'Н/Д -> Н/Д')
-            # Если в маршруте уже есть разделители, берем только части до/после них
-            if "➡️" in raw_route or "->" in raw_route:
-                parts = re.split(r'➡️|->', raw_route)
-                # Берем первый и последний элементы, чтобы не плодить вложенность
-                c_from = clean_name(parts[0].strip(), is_city=True)
-                c_to = clean_name(parts[-1].strip(), is_city=True)
-            else:
-                c_from = clean_name(raw_route, is_city=True)
-                c_to = "АСТРА" # Дефолт, если город один
-
-            results.append({
-                "tk": str(m.get('tk', 'ПАМЯТКА')).upper(),
-                "id": m_id,
-                "sender": sender,
-                "recipient": recipient,
-                "route": f"{c_from} -> {c_to}", # Теперь всегда чисто: ГОРОД1 -> ГОРОД2
-                "status": str(m.get('status', 'ОЖИДАЕТ')).upper(),
-                "params": str(m.get('params', '1М | 0КГ | 0М3')).upper(),
-                "arrival": m.get('arrival', 'Н/Д'),
-                "payment": str(m.get('payment', 'УТОЧНИТЬ')).upper(),
-                "is_manual": True
-            })
-        except Exception as e:
-            print(f"[Manual Parser Error] {e}")
     return results
 
 
@@ -726,20 +456,6 @@ def run_main_parser():
         print(f"[Parser] Витека успешно распарсена: {len(viteka_items)} грузов")
         raw_results.extend(viteka_items)
 
-    # --- ОБНОВЛЕННЫЙ БЛОК ПАМЯТОК ---
-    manual_file = os.path.join(data_dir, 'manual_cargo.json')
-    manual_data = [] # Оставляем переменную для последующей очистки
-    if os.path.exists(manual_file):
-        with open(manual_file, 'r', encoding='utf-8') as f:
-            try:
-                manual_data = json.load(f)
-                # Используем твою новую функцию parse_manual
-                manual_items = parse_manual(manual_data)
-                print(f"[Parser] Памятки обработаны: {len(manual_items)} шт.")
-                raw_results.extend(manual_items)
-            except Exception as e:
-                print(f"[Manual] Ошибка чтения/парсинга памяток: {e}")
-
     # 1. ЛОГИКА "ПАМЯТИ": Сравниваем с прошлым запуском
     current_ids = {str(r['id']) for r in raw_results}
 
@@ -771,6 +487,19 @@ def run_main_parser():
 
     # 3. АРХИВАЦИЯ (Объединяем явно выданные и пропавшие из эфира)
     to_archive = just_finished_api + missing_items
+
+    # --- СПЕЦ-ЛОГИКА ДЛЯ БСД: ФИКСИРУЕМ ДАТУ ВЫДАЧИ В АРХИВЕ ---
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    for r in to_archive:
+        if r.get('tk') == "БСД":
+            # Если даты нет (САМОВЫВОЗ) или это был временный прогноз
+            if r.get('arrival') == "САМОВЫВОЗ" or "ПРОГНОЗ" in str(r.get('status')):
+                # Ставим реальную дату перемещения в архив
+                r['arrival'] = today_str
+                # Убираем пометки прогноза из статуса для чистоты истории
+                r['status'] = str(r.get('status')).replace(" (ПРОГНОЗ +4Д)", "").replace("🚚 ", "").strip()
+
+    # Теперь отправляем очищенные данные в постоянный архив
     update_permanent_archive(to_archive)
 
     # Сохраняем текущий актив для следующего сравнения
@@ -817,18 +546,6 @@ def run_main_parser():
         line = (f"{r['tk']:<15} | {str(r['id']):<18} | {str(r['sender'])[:19]:<20} | "
                 f"{str(r['route'])[:24]:<25} | {str(r['status'])[:29]:<30} | {str(r['arrival'] or 'Н/Д')[:10]:<10}")
         print(line)
-
-        # --- ИСПРАВЛЕННАЯ ОЧИСТКА ПАМЯТОК ---
-    if manual_data:
-        # ID тех, кто реально ушел в архив (статус "Выдан")
-        archived_ids = {str(a['id']) for a in to_archive}
-
-        # Оставляем только те, которые НЕ в архиве
-        remaining_manual = [m for m in manual_data if str(m['id']) not in archived_ids]
-
-        with open(manual_file, 'w', encoding='utf-8') as f:
-            json.dump(remaining_manual, f, ensure_ascii=False, indent=4)
-        print(f"[Manual] Очистка завершена. Актуальных памяток в базе: {len(remaining_manual)}")
 
 
     # 6. СОХРАНЕНИЕ ОТЧЕТОВ

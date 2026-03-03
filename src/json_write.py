@@ -1,25 +1,9 @@
-# -*- coding: utf-8 -*-
-# Copyright (C) 2024-2026 RobertKano
-# Project: LogisticAPIs (https://github.com)
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <https://www.gnu.org>.
-
-
-from datetime import datetime
 from pathlib import Path
 import json
 import requests
+import time
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor # Ускоритель
 
 from api_classes import (
     BK_SECRET_KEY,
@@ -36,49 +20,67 @@ from api_classes import (
     VitekaApiV1
 )
 
-
-time_for_now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
-
+# Инициализация объектов
 p = PecomApiV1(PC_SECRET_KEY, PC_LOGIN)
 d = DellinApiV1(DL_SECRET_KEY, DL_LOGIN, DL_PASS)
 b = BaikalApiV2(BK_SECRET_KEY)
 vt = VitekaApiV1(VT_LOGIN, VT_PASS)
 
-dl_curr_ord = d.orders_info()
-pc_curr_ord = p.fetch_detailed_data_hardcoded()
-bk_curr_ord = b.get_oreders_list()
-print("[Viteka] Начало сбора данных...")
-vt_raw_html_list = vt.get_raw_html_pages(count=2)
+def fetch_baikal_parallel():
+    """Специальная функция для Байкала: сначала список, потом параллельно детали"""
+    s_bk = time.time()
+    list_of_cargo_codes = b.collect_cargocodes()
+    results = []
 
-list_of_cargo_codes = b.collect_cargocodes()
-bc_detailed_info = [] # Инициализируем как список
+    if list_of_cargo_codes:
+        # Запускаем детализацию в 10 потоков (Байкал это переварит)
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            results = list(executor.map(b.get_order_info, list_of_cargo_codes))
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [3/4] Байкал Сервис: ОК ({len(list_of_cargo_codes)} зак., {round(time.time() - s_bk, 2)} сек.)")
+    else:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [3/4] Байкал Сервис: Заказов не обнаружено.")
+    return results
 
-if list_of_cargo_codes:
-    for i in list_of_cargo_codes:
-        # Собираем реальные данные в список
-        bc_detailed_info.append(b.get_order_info(i))
-else:
-    print("Заказов в Байкал-Сервис не обнаружено.")
-    # Оставляем список пустым: bc_detailed_info = []
+def get_all_data_in_json():
+    start_all = time.time()
+    time_for_now = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+
+    print(f"--- НАЧАЛО ПАРАЛЛЕЛЬНОГО СБОРА ---")
+
+    # Запускаем 4 основные задачи одновременно
+    # В json_write.py замени блок получения результатов:
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        future_dl = executor.submit(d.orders_info)
+        future_pc = executor.submit(p.fetch_detailed_data_hardcoded)
+        future_vt = executor.submit(vt.get_raw_html_pages, count=2)
+        future_bk = executor.submit(fetch_baikal_parallel)
+
+        # Ждем результаты с жестким лимитом 30 секунд
+        try:
+            dl_curr_ord = future_dl.result(timeout=30)
+            pc_curr_ord = future_pc.result(timeout=30) # Если ПЭК висит, через 30с сработает исключение
+            vt_raw_html_list = future_vt.result(timeout=30)
+            bc_detailed_info = future_bk.result(timeout=30)
+        except Exception as e:
+            print(f"\n[!] Сбор прерван по таймауту или ошибке: {e}")
+            # Инициализируем пустые списки для тех, кто не успел
+            dl_curr_ord = dl_curr_ord if 'dl_curr_ord' in locals() else []
+            pc_curr_ord = pc_curr_ord if 'pc_curr_ord' in locals() else []
+            vt_raw_html_list = vt_raw_html_list if 'vt_raw_html_list' in locals() else []
+            bc_detailed_info = bc_detailed_info if 'bc_detailed_info' in locals() else []
 
 
-def get_all_data_in_json(dl, pc, bk):
-    """Сбор/запись общий информации по заказам
-    из трех ТК: деловые, пэк, байкал, добавление таймштампа
+    print("-" * 30)
+    print(f"ОБЩЕЕ ВРЕМЯ ВЫПОЛНЕНИЯ: {round(time.time() - start_all, 2)} сек.")
+    print("-" * 30)
 
-    :param dl: [метод отбора текущих перевозок]
-    :type dl: [DellinApiV1]
-    :param pc: [метод отбора текущих перевозок]
-    :type pc: [PecomApiV1]
-    :param bk: [метод отбора текущих перевозок]
-    :type bk: [BaikalApiV2]
-    """
+    # Блок записи (твоя логика без изменений)
     try:
         combined_data = {
             "Timestamp": time_for_now,
-            "Dellin": dl,
-            "Pecom": pc,
-            "Baikal": bk,
+            "Dellin": dl_curr_ord,
+            "Pecom": pc_curr_ord,
+            "Baikal": bc_detailed_info,
             "BSD": vt_raw_html_list,
         }
 
@@ -89,18 +91,11 @@ def get_all_data_in_json(dl, pc, bk):
             json.dump(combined_data, json_file, indent=2, sort_keys=True, ensure_ascii=False)
         print("[✓] Сбор всех 'сырых' данных завершен (/data/test_all_tk.json)")
 
-    except requests.exceptions.RequestException as e:
-        print(f"As error was occured during the API request: {e}")
-
-    except json.JSONDecodeError as e:
-        print(f"Error decoding JSON: {e}")
-
-    except IOError as e:
-        print(f"Error writing to file: {e}")
-
+    except Exception as e:
+        print(f"Ошибка при сохранении JSON: {e}")
 
 def main():
-    get_all_data_in_json(dl_curr_ord, pc_curr_ord, bc_detailed_info)
+    get_all_data_in_json()
 
 if __name__ == '__main__':
     main()
