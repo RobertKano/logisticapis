@@ -252,6 +252,7 @@ code { color: var(--accent-blue); background: #f0f7ff; padding: 3px 6px; border-
         width: 100% !important;
         border-collapse: collapse !important;
         table-layout: fixed !important;
+        border: 2px solid #000 !important;
     }
 
     #print-zone thead { display: table-header-group !important; }
@@ -264,4 +265,11 @@ code { color: var(--accent-blue); background: #f0f7ff; padding: 3px 6px; border-
     }
 
     #print-zone tbody tr { display: table-row !important; }
+
+    .empty-print-row td {
+        height: 50px !important; /* Увеличил, чтобы рука пролезла */
+        border: 1px solid #000 !important;
+        background: transparent !important;
+    }
+
 }

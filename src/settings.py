@@ -1,40 +1,43 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2024-2026 RobertKano
 # Project: LogisticAPIs (https://github.com)
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <https://www.gnu.org>.
 
-
-
-# Constants, utility functions and variables for project
 import os
-from pathlib import Path
 from dotenv import load_dotenv
 
+# --- ИНИЦИАЛИЗАЦИЯ ОКРУЖЕНИЯ ---
 load_dotenv()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 env_path = os.path.join(BASE_DIR, ".env")
 load_dotenv(dotenv_path=env_path)
 
-HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'history_archive.json')
-LAST_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'last_active_state.json')
-HASH_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'last_report_hash.txt')
-LOG_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'process.log')
+# --- ПУТИ К ДАННЫМ (Нормализация 2026) ---
+# Определяем корневую папку данных (на уровень выше от src)
+DATA_DIR = os.path.normpath(os.path.join(BASE_DIR, '..', 'data'))
+os.makedirs(DATA_DIR, exist_ok=True)
 
+# 1. СЫРЫЕ данные от API (замена test_all_tk.json)
+RAW_DATA_FILE = os.path.join(DATA_DIR, 'raw_api_data.json')
+
+# 2. ТЕКУЩЕЕ СОСТОЯНИЕ для фронтенда (замена test_all_tk_processed.json)
+CURRENT_STATE_FILE = os.path.join(DATA_DIR, 'current_state.json')
+
+# 3. ПОСЛЕДНЕЕ СОСТОЯНИЕ (для сравнения и архивации)
+LAST_STATE_FILE = os.path.join(DATA_DIR, 'last_active_state.json')
+
+# 4. ПУТЬ К БУДУЩЕЙ БАЗЕ ДАННЫХ (пока не используется)
+DB_PATH = os.path.join(DATA_DIR, 'cargo_system.db')
+
+# 5. СЛУЖЕБНЫЕ ФАЙЛЫ
+HISTORY_FILE = os.path.join(DATA_DIR, 'history_archive.json')
+HASH_FILE = os.path.join(DATA_DIR, 'last_report_hash.txt')
+LOG_FILE = os.path.join(DATA_DIR, 'process.log')
+
+# --- НАСТРОЙКИ УВЕДОМЛЕНИЙ ---
 TELEGRAM_CHAT_ID = os.getenv("TG_CHAT_ID", "")
 TELEGRAM_TOKEN = os.getenv("TG_BOT_TOKEN")
 
+# --- МАППИНГ ГОРОДОВ ---
 CITY_MAP = {
     "астрахань": "АСТРА",
     "санкт-петербург": "СПБ",
@@ -61,8 +64,8 @@ CITY_MAP = {
 }
 
 def main():
-    print(TELEGRAM_CHAT_ID)
-
+    print(f"[Settings] DATA_DIR: {DATA_DIR}")
+    print(f"[Settings] RAW_DATA_FILE: {RAW_DATA_FILE}")
 
 if __name__ == '__main__':
     main()

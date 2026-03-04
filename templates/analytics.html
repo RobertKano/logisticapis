@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Аналитика логистики | Dashboard</title>
+    <link href="https://cdn.jsdelivr.net" rel="stylesheet">
+    <style>
+        :root {
+            --bg-body: #f4f7f6;
+            --card-bg: #ffffff;
+            --text-main: #1c2434;
+            --text-muted: #8a99af;
+            --accent: #3c50e0;
+            --danger: #ef4444;
+            --success: #10b981;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            color: var(--text-main);
+            padding: 30px;
+        }
+
+        .header-section { margin-bottom: 25px; }
+
+        /* ПРИНУДИТЕЛЬНЫЙ ГОРИЗОНТАЛЬНЫЙ РЯД КАРТОЧЕК */
+        .stats-wrapper {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: nowrap; /* Запрет переноса на десктопе */
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            flex: 1; /* Одинаковая ширина */
+            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+            min-width: 200px;
+            border-bottom: 4px solid transparent;
+        }
+
+        .stat-card.danger { border-color: var(--danger); }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .stat-value { font-size: 1.7rem; font-weight: 800; }
+        .stat-unit { font-size: 0.85rem; color: var(--text-muted); margin-left: 5px; font-weight: 400; }
+
+        /* ТАБЛИЦА */
+        .table-container {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+        }
+
+        .table thead th {
+            border: none;
+            background: #f8fafc;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            padding: 15px;
+        }
+
+        .table td { padding: 15px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+
+        .tk-name { font-weight: 700; color: var(--accent); }
+        .efficiency-val { font-weight: 700; color: var(--success); }
+        .no-data { color: #cbd5e1; font-style: italic; font-size: 0.8rem; }
+
+        @media (max-width: 768px) {
+            .stats-wrapper { flex-wrap: wrap; }
+            .stat-card { flex: 1 1 45%; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid" style="max-width: 1400px;">
+
+    <!-- HEADER -->
+    <div class="header-section d-flex justify-content-between align-items-end">
+        <div>
+            <h2 class="fw-bold m-0">📈 Аналитика логистики</h2>
+            <div class="text-muted small">Данные за последние 30 дней</div>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="/" class="btn btn-sm btn-outline-secondary" style="border-radius: 8px;">⬅️ К списку грузов</a>
+        </div>
+    </div>
+
+    <!-- СВОДНЫЕ ПОКАЗАТЕЛИ (В ОДИН РЯД) -->
+    <div class="stats-wrapper">
+        <div class="stat-card">
+            <span class="stat-label">📦 МЕСТ В ПУТИ</span>
+            <div class="stat-value" id="stat-places">0</div>
+        </div>
+
+        <div class="stat-card">
+            <span class="stat-label">⚖️ ОБЩИЙ ВЕС</span>
+            <div class="stat-value">
+                <span id="stat-weight">0</span><span class="stat-unit">кг</span>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <span class="stat-label">🧊 ОБЪЕМ ГРУЗА</span>
+            <div class="stat-value">
+                <span id="stat-volume">0</span><span class="stat-unit">м³</span>
+            </div>
+        </div>
+
+        <div class="stat-card danger">
+            <span class="stat-label text-danger">💰 К ОПЛАТЕ</span>
+            <div class="stat-value">
+                <span id="stat-unpaid">0</span><span class="stat-unit">₽</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ТАБЛИЦА ЭФФЕКТИВНОСТИ -->
+    <div class="table-container">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h5 class="fw-bold m-0">Сравнение эффективности перевозчиков</h5>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Перевозчик</th>
+                        <th class="text-center">Срок (дн)</th>
+                        <th class="text-end">Объемный вес</th>
+                        <th class="text-end">Вес к оплате</th>
+                        <th class="text-end">Стоимость за кг</th>
+                        <th class="text-end">Стоимость за п.</th>
+                        <th class="text-end">Итого (₽)</th>
+                    </tr>
+                </thead>
+                <tbody id="tk-stats-body">
+                    <!-- Заполняется через JavaScript -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+async function loadAnalytics() {
+    try {
+        // 1. Общая сводка
+        const resSum = await fetch('/api/analytics');
+        const dataSum = await resSum.json();
+        if (dataSum.status === 'ok') {
+            const s = dataSum.summary;
+            document.getElementById('stat-places').innerText = s.total_places || 0;
+            document.getElementById('stat-weight').innerText = (s.total_weight || 0).toLocaleString('ru-RU');
+            document.getElementById('stat-volume').innerText = (s.total_volume || 0).toLocaleString('ru-RU');
+            document.getElementById('stat-unpaid').innerText = (s.total_unpaid || 0).toLocaleString('ru-RU');
+        }
+
+        // 2. Сравнение ТК за 30 дней
+        const resTk = await fetch('/api/analytics/tk-compare');
+        const dataTk = await resTk.json();
+        const tbody = document.getElementById('tk-stats-body');
+        tbody.innerHTML = '';
+
+        dataTk.forEach(item => {
+            const tr = document.createElement('tr');
+
+            // Проверка на наличие данных для корректного вывода
+            const costKg = item.cost_per_kg > 0 ? `${item.cost_per_kg} ₽` : '—';
+            const costPlace = item.cost_per_place > 0 ? `${item.cost_per_place} ₽` : '—';
+
+            tr.innerHTML = `
+                <td><span class="tk-name">${item.tk}</span></td>
+                <td class="text-center text-muted">${item.avg_days || 0}</td>
+                <td class="text-end">${item.volume_weight.toLocaleString()} кг</td>
+                <td class="text-end fw-bold">${item.pay_weight.toLocaleString()} кг</td>
+                <td class="text-end efficiency-val">${costKg}</td>
+                <td class="text-end text-indigo">${costPlace}</td>
+                <td class="text-end fw-bold">${item.total_spent.toLocaleString()} ₽</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+    } catch (e) {
+        console.error("Ошибка загрузки данных:", e);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadAnalytics);
+</script>
+
+</body>
+</html>

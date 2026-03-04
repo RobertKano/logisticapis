@@ -23,41 +23,29 @@ import re
 from datetime import datetime
 from datetime import timedelta
 from bs4 import BeautifulSoup
+from database import CargoDB
 
 import settings as st
 
 
-def cleanup_old_reports(data_dir, days=14):
-    """Удаляет отчеты старше N дней, чтобы не захламлять диск"""
-    if not os.path.exists(data_dir):
-        return
-
-    now = time.time()
-    cutoff = now - (days * 86400) # 86400 секунд в сутках
-    deleted_count = 0
-
-    for f in os.listdir(data_dir):
-        # Маска файла: строго report_YYYY-MM-DD.json
-        if f.startswith("report_") and f.endswith(".json"):
-            file_path = os.path.join(data_dir, f)
-            try:
-                # Проверяем дату последнего изменения
-                if os.stat(file_path).st_mtime < cutoff:
-                    os.remove(file_path)
-                    deleted_count += 1
-            except Exception as e:
-                print(f"[Cleanup] Ошибка при удалении {f}: {e}")
-
-    if deleted_count > 0:
-        print(f"[Cleanup] Очистка завершена. Удалено старых отчетов: {deleted_count}")
-
+def cleanup_old_reports(keep_count=7):
+    """Оставляет только N последних файлов report_*.json"""
+    import glob
+    # Используем путь из настроек
+    files = sorted(glob.glob(os.path.join(st.DATA_DIR, "report_*.json")), reverse=True)
+    for old_file in files[keep_count:]:
+        try:
+            os.remove(old_file)
+            print(f"[Cleanup] Удален старый отчет: {os.path.basename(old_file)}")
+        except:
+            pass
 
 def update_permanent_archive(new_archive_items):
-    """Сохраняет уникальные завершенные заказы в вечный архив, дополняя его"""
+    """Сохраняет завершенные заказы в JSON и в будущую БД"""
     if not new_archive_items:
         return
 
-    # 1. Читаем существующий архив максимально безопасно
+    # Читаем существующий JSON архив
     old_history = []
     if os.path.exists(st.HISTORY_FILE):
         try:
@@ -65,39 +53,27 @@ def update_permanent_archive(new_archive_items):
                 content = f.read().strip()
                 if content:
                     old_history = json.loads(content)
-        except Exception as e:
-            print(f"[Archive Error] Ошибка чтения файла истории: {e}")
+        except:
             old_history = []
 
-    # 2. Создаем набор существующих ID для мгновенной проверки
     existing_ids = {str(item.get('id')) for item in old_history if item.get('id')}
-
-    # 3. Добавляем только те, которых реально нет в базе
     added_count = 0
+
     for item in new_archive_items:
         cargo_id = str(item.get('id', ''))
-
-        # Если ID пустой (такого быть не должно) или уже есть в базе - пропускаем
         if not cargo_id or cargo_id in existing_ids:
             continue
 
-        # Добавляем технические поля
         item['archived_at'] = datetime.now().strftime('%d.%m.%Y')
-        if 'tk' not in item and item.get('is_manual'):
-            item['tk'] = "📝 ПАМЯТКА"
-
         old_history.append(item)
         existing_ids.add(cargo_id)
         added_count += 1
 
-    # 4. Сохраняем ВЕСЬ обновленный список обратно
     if added_count > 0:
-        try:
-            with open(st.HISTORY_FILE, 'w', encoding='utf-8') as f:
-                json.dump(old_history, f, ensure_ascii=False, indent=4)
-            print(f"[Archive] Успешно добавлено новых записей: {added_count}. Всего в архиве: {len(old_history)}")
-        except Exception as e:
-            print(f"[Archive Error] Критическая ошибка при записи истории: {e}")
+        with open(st.HISTORY_FILE, 'w', encoding='utf-8') as f:
+            json.dump(old_history, f, ensure_ascii=False, indent=4)
+        print(f"[Archive] В JSON добавлено: {added_count}. Всего: {len(old_history)}")
+
 
 
 def clean_name(text, is_city=False):
@@ -278,7 +254,6 @@ def parse_dellin(data):
     return results
 
 
-
 def parse_pecom(data):
     results = []
     # Работаем через cargos, как в твоем исходнике
@@ -432,37 +407,41 @@ def save_json_report(data, file_path):
 
 # --- ОСНОВНОЙ ПУЛЬТ ---
 
-# Пути к файлам (убедись, что они в начале модуля)
-
 def run_main_parser():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(base_dir, '..', 'data')
-    input_file = os.path.join(data_dir, 'test_all_tk.json')
+    # 0. ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
+    db = CargoDB()
 
-    if not os.path.exists(input_file):
-        return print(f"Файл не найден: {input_file}")
+    # 1. ЗАГРУЗКА ДАННЫХ (Используем нормализованный путь из settings)
+    if not os.path.exists(st.RAW_DATA_FILE):
+        return print(f"Ошибка: Файл не найден: {st.RAW_DATA_FILE}")
 
-    with open(input_file, 'r', encoding='utf-8') as f:
-        raw_json = json.load(f)
+    with open(st.RAW_DATA_FILE, 'r', encoding='utf-8') as f:
+        try:
+            raw_json = json.load(f)
+        except Exception as e:
+            return print(f"Ошибка чтения JSON: {e}")
 
     raw_results = []
-    # Сбор данных от всех ТК
+
+    # Сбор данных от всех ТК (Твои функции парсинга)
     if "Baikal" in raw_json: raw_results.extend(parse_baikal(raw_json["Baikal"]))
     if "Dellin" in raw_json: raw_results.extend(parse_dellin(raw_json["Dellin"]))
     if "Pecom" in raw_json: raw_results.extend(parse_pecom(raw_json["Pecom"]))
     if "BSD" in raw_json:
-        print(f"[Parser] Найдено страниц Витеко: {len(raw_json['BSD'])}")
+        print(f"[Parser] Найдено страниц БСД: {len(raw_json['BSD'])}")
         viteka_items = parse_viteka(raw_json["BSD"])
-        print(f"[Parser] Витека успешно распарсена: {len(viteka_items)} грузов")
+        print(f"[Parser] БСД успешно распарсена: {len(viteka_items)} грузов")
         raw_results.extend(viteka_items)
 
-    # 1. ЛОГИКА "ПАМЯТИ": Сравниваем с прошлым запуском
+    # 2. ЛОГИКА "ПАМЯТИ": Сравниваем с прошлым состоянием
     current_ids = {str(r['id']) for r in raw_results}
 
     if os.path.exists(st.LAST_STATE_FILE):
         with open(st.LAST_STATE_FILE, 'r', encoding='utf-8') as f:
-            try: last_active = json.load(f)
-            except: last_active = []
+            try:
+                last_active = json.load(f)
+            except:
+                last_active = []
     else:
         last_active = []
 
@@ -470,10 +449,11 @@ def run_main_parser():
     missing_items = []
     for item in last_active:
         if str(item['id']) not in current_ids:
-            item['status'] = "Выдан (автоархив)"
+            # Помечаем для архива
+            item['status'] = "ВЫДАН (АВТОАРХИВ)"
             missing_items.append(item)
 
-    # 2. КЛАССИФИКАЦИЯ ТЕКУЩИХ
+    # 3. КЛАССИФИКАЦИЯ
     EXCLUDE = ["выдан", "доставлен", "завершен", "архив", "выдача", "получен"]
 
     active = sorted(
@@ -481,47 +461,48 @@ def run_main_parser():
         key=lambda x: str(x.get('arrival') or "9999")
     )
 
-    # Заказы (включая памятки), которые ПРЯМО СЕЙЧАС имеют статус "Выдан"
+    # Заказы, которые ПРЯМО СЕЙЧАС имеют статус "Выдан" в API
     just_finished_api = [r for r in raw_results if any(k in str(r.get('status', '')).lower() for k in EXCLUDE)]
 
-
-    # 3. АРХИВАЦИЯ (Объединяем явно выданные и пропавшие из эфира)
+    # ОБЪЕДИНЯЕМ ДЛЯ АРХИВАЦИИ
     to_archive = just_finished_api + missing_items
 
-    # --- СПЕЦ-ЛОГИКА ДЛЯ БСД: ФИКСИРУЕМ ДАТУ ВЫДАЧИ В АРХИВЕ ---
+    # Спец-логика для БСД: Фиксируем дату выдачи перед отправкой в архив
     today_str = datetime.now().strftime('%Y-%m-%d')
     for r in to_archive:
         if r.get('tk') == "БСД":
-            # Если даты нет (САМОВЫВОЗ) или это был временный прогноз
             if r.get('arrival') == "САМОВЫВОЗ" or "ПРОГНОЗ" in str(r.get('status')):
-                # Ставим реальную дату перемещения в архив
                 r['arrival'] = today_str
-                # Убираем пометки прогноза из статуса для чистоты истории
                 r['status'] = str(r.get('status')).replace(" (ПРОГНОЗ +4Д)", "").replace("🚚 ", "").strip()
 
-    # Теперь отправляем очищенные данные в постоянный архив
+    # --- SQLITE: СОХРАНЕНИЕ АРХИВА ---
+    for item in to_archive:
+        db.upsert_cargo(item, is_archived=1)
+
+    # Сохраняем в постоянный архив JSON (страховка)
     update_permanent_archive(to_archive)
 
-    # Сохраняем текущий актив для следующего сравнения
+    # --- SQLITE: СОХРАНЕНИЕ АКТИВА ---
+    for item in active:
+        db.upsert_cargo(item, is_archived=0)
+
+    # Сохраняем текущий актив для сравнения при следующем запуске
     with open(st.LAST_STATE_FILE, 'w', encoding='utf-8') as f:
         json.dump(active, f, ensure_ascii=False, indent=4)
 
-    # 4. ПОДГОТОВКА ДАННЫХ ДЛЯ ФРОНТЕНДА
+    # 4. ПОДГОТОВКА JSON ДЛЯ ФРОНТЕНДА
     full_history = []
     if os.path.exists(st.HISTORY_FILE):
         with open(st.HISTORY_FILE, 'r', encoding='utf-8') as f:
             try:
                 full_history = json.load(f)
-                # Сортировка с защитой: если даты нет, ставим очень старую
                 full_history.sort(
                     key=lambda x: datetime.strptime(x.get('archived_at', '01.01.2020'), '%d.%m.%Y'),
                     reverse=True
                 )
             except Exception as e:
-                print(f"[Error] Ошибка чтения/сортировки истории: {e}")
-                # Если упали — всё равно берем то, что прочитали, или хотя бы новые
-                if not full_history:
-                    full_history = to_archive
+                print(f"[Error] Ошибка сортировки истории: {e}")
+                full_history = to_archive
     else:
         full_history = to_archive
 
@@ -536,32 +517,26 @@ def run_main_parser():
         "archive": full_history
     }
 
-    # 5. КОНСОЛЬНЫЙ ВЫВОД (возвращаем сводку)
+    # 5. КОНСОЛЬНЫЙ ВЫВОД
     print(f"\nОТЧЕТ ТРАНСПОРТ | {report_time}")
     print("="*150)
-    head = f"{'ТК':<15} | {'№ Накладной':<18} | {'Отправитель':<20} | {'Маршрут':<25} | {'Статус':<30} | {'Прибытие':<10}"
-    print(head)
+    print(f"{'ТК':<15} | {'№ Накладной':<18} | {'Отправитель':<20} | {'Маршрут':<25} | {'Статус':<30} | {'Прибытие':<10}")
     print("-"*150)
     for r in active:
-        line = (f"{r['tk']:<15} | {str(r['id']):<18} | {str(r['sender'])[:19]:<20} | "
-                f"{str(r['route'])[:24]:<25} | {str(r['status'])[:29]:<30} | {str(r['arrival'] or 'Н/Д')[:10]:<10}")
-        print(line)
+        print(f"{r['tk']:<15} | {str(r['id']):<18} | {str(r['sender'])[:19]:<20} | "
+              f"{str(r['route'])[:24]:<25} | {str(r['status'])[:29]:<30} | {str(r['arrival'] or 'Н/Д')[:10]:<10}")
 
-
-    # 6. СОХРАНЕНИЕ ОТЧЕТОВ
+    # 6. СОХРАНЕНИЕ
     date_str = datetime.now().strftime('%Y-%m-%d')
+    daily_report_path = os.path.join(st.DATA_DIR, f"report_{date_str}.json")
 
-    # Основной отчет для прода (с датой)
-    save_json_report(json_data, os.path.join(data_dir, f"report_{date_str}.json"))
+    save_json_report(json_data, daily_report_path)
+    save_json_report(json_data, st.CURRENT_STATE_FILE)
 
-    # Отчет для DEV-сервера (всегда свежий статический файл)
-    save_json_report(json_data, os.path.join(data_dir, "test_all_tk_processed.json"))
+    # 7. ОЧИСТКА (7 последних)
+    cleanup_old_reports(7)
 
-    cleanup_old_reports(data_dir, days=14)
-
-    print(f"\n[✓] Обработка завершена. Активно: {len(active)}, Добавлено в архив: {len(to_archive)}")
-
-
+    print(f"\n[✓] Обработка завершена. Активно: {len(active)}, В базу/архив: {len(to_archive)}")
 
 
 if __name__ == "__main__":
