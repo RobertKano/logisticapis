@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <title>{% if is_dev %}🚧 [DEV] План выездов{% else %}График выездов | Южный Форпост{% endif %}</title>
+
+    <!-- Твои локальные стили -->
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}{% if is_dev %}?v={{ range(1, 999) | random }}{% else %}?v=1.3{% endif %}" rel="stylesheet">
+
+    <style>
+        body { background-color: #f4f7f6; overflow-x: hidden; }
+        .kanban-container { display: flex; gap: 10px; padding: 20px; width: 100%; align-items: flex-start; }
+        .kanban-col { background: #e2e8f0; border-radius: 12px; flex: 1; min-width: 0; padding: 12px; box-shadow: inset 0 0 5px rgba(0,0,0,0.05); min-height: 100px; }
+        .day-header { font-weight: 800; text-transform: uppercase; font-size: 0.75rem; color: #475569; margin-bottom: 12px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px; display: flex; justify-content: space-between; }
+        .task-card { background: white; border-radius: 10px; padding: 12px; margin-bottom: 10px; border-left: 5px solid #64748b; cursor: pointer; position: relative; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s; }
+        .task-card:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .task-card.completed { opacity: 0.5; filter: grayscale(0.8); }
+        .task-title { font-weight: 700; font-size: 0.9rem; color: #1e293b; display: block; margin: 4px 0; line-height: 1.2; }
+        .task-time { font-weight: bold; color: #3c50e0; font-size: 0.85rem; }
+        .copy-btn { position: absolute; top: 8px; right: 8px; border: none; background: #f1f5f9; border-radius: 4px; padding: 1px 5px; font-size: 0.8rem; cursor: pointer; opacity: 0.5; z-index: 10; }
+        .copy-btn:hover { opacity: 1; background: #e2e8f0; }
+        .copy-day-btn {cursor: pointer; opacity: 0.5; transition: 0.3s; font-size: 0.9rem; padding: 2px 5px; background: #cbd5e1; border-radius: 4px; border: none;
+        }
+        .copy-day-btn:hover { opacity: 1; background: #94a3b8; color: white; }
+        .modal-content { border-radius: 20px; border: none; overflow: hidden; }
+        .form-control-modern { background-color: #f8fafc; border: 2px solid transparent; border-radius: 10px; padding: 10px 15px; }
+        .form-control-modern:focus { background-color: #fff; border-color: #3c50e0; box-shadow: none; outline: none; }
+        .sunday { opacity: 0.6; background: #cbd5e1; }
+        .badge-pay { font-size: 0.7rem; padding: 2px 5px; border-radius: 5px; font-weight: bold; }
+        .bg-to-pay { background: #fee2e2; color: #991b1b; }
+        .bg-to-collect { background: #dcfce7; color: #166534; }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center px-4 mb-4">
+        <div>
+            <h2 class="fw-bold m-0 text-dark">🗓 График выездов</h2>
+            <p class="text-muted small mb-0 font-weight-bold text-uppercase">Логистика: Южный Форпост</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary px-4 fw-bold shadow-sm" onclick="openTaskModal()" style="border-radius: 12px;">+ Добавить задачу</button>
+            <a href="/" class="btn btn-outline-dark px-3 fw-bold" style="border-radius: 12px; margin-left: 10px;">🏠 Главная</a>
+        </div>
+    </div>
+    <div class="kanban-container" id="board"></div>
+</div>
+
+<!-- Modal (Bootstrap 5) -->
+<div class="modal fade" id="taskModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content shadow-lg">
+            <div class="modal-header border-0 bg-light px-4 pt-4">
+                <h5 class="modal-title fw-bold text-uppercase" id="mTitle" style="font-size: 1rem;">Правка задачи</h5>
+                <!-- Универсальный крестик для BS4 и BS5 -->
+                <button type="button" class="close" data-bs-dismiss="modal" aria-label="Close"
+                        style="border: none; background: transparent; font-size: 1.5rem; line-height: 1; opacity: 0.5; outline: none;">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body p-4">
+                <form id="taskForm">
+                    <input type="hidden" id="mId">
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="small fw-bold text-muted">ДАТА</label><input type="date" class="form-control form-control-modern" id="mDate" required></div>
+                        <div class="col-md-6"><label class="small fw-bold text-muted">ВРЕМЯ</label><input type="time" class="form-control form-control-modern" id="mTime" value="09:00"></div>
+                        <div class="col-12"><label class="small fw-bold text-muted">СУТЬ ЗАДАЧИ</label><input type="text" class="form-control form-control-modern" id="mTaskTitle" required></div>
+                        <div class="col-12"><label class="small fw-bold text-muted">АДРЕС / КОНТАКТЫ</label><textarea class="form-control form-control-modern" id="mAddr" rows="2"></textarea></div>
+                        <div class="col-md-6"><label class="small fw-bold text-muted">СУММА (₽)</label><input type="number" class="form-control form-control-modern" id="mMoney" value="0"></div>
+                        <div class="col-md-6"><label class="small fw-bold text-muted">ОПЛАТА</label>
+                            <select class="form-select form-control-modern" id="mPayType">
+                                <option value="none">Без оплаты</option>
+                                <option value="to_pay">Мы платим</option>
+                                <option value="to_collect">С клиента</option>
+                            </select>
+                        </div>
+                        <div class="col-12"><div class="form-check form-switch mt-2"><input class="form-check-input" type="checkbox" id="mCompleted" style="transform: scale(1.2); cursor:pointer;"><label class="ms-2 fw-bold" for="mCompleted">Выполнено</label></div></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-0 bg-light p-4 justify-content-between">
+                <button type="button" class="btn btn-link text-danger fw-bold text-decoration-none" id="mBtnDel" onclick="deleteTask()" style="display:none">Удалить</button>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary px-4 shadow-sm" onclick="saveTask()">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ТВОЙ ФАЙЛ BOOTSTRAP 5 -->
+<script src="{{ url_for('static', filename='js/bootstrap5.bundle.min.js') }}"></script>
+
+<script>
+    let tasks = [];
+    let tModal; // Объект модального окна (Bootstrap 5)
+
+    // 1. ЗАГРУЗКА ДАННЫХ
+    async function load() {
+        try {
+            const r = await fetch('/api/tasks');
+            tasks = await r.json();
+
+            // Инициализация модалки через твой локальный bootstrap5.bundle.min.js
+            const modalEl = document.getElementById('taskModal');
+            if (typeof bootstrap !== 'undefined') {
+                tModal = new bootstrap.Modal(modalEl);
+            }
+
+            render();
+        } catch(e) {
+            console.error("Ошибка при загрузке планировщика:", e);
+        }
+    }
+
+    // 2. ОТРИСОВКА ДОСКИ (КАНБАН)
+    function render() {
+        const board = document.getElementById('board');
+        if (!board) return;
+        board.innerHTML = ''; // Очистка перед рендером
+
+        const dayNames = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+
+        // Вычисляем текущую неделю (от Понедельника)
+        const now = new Date();
+        const first = now.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1);
+        const monday = new Date(now.setDate(first));
+
+        for (let i = 0; i < 7; i++) {
+            const d = new Date(monday);
+            d.setDate(monday.getDate() + i);
+            const dStr = d.toISOString().split('T')[0];
+            const displayDate = `${d.getDate()}.${d.getMonth()+1}`;
+
+            const col = document.createElement('div');
+            col.className = `kanban-col ${i === 6 ? 'sunday' : ''}`;
+
+            // Формируем каркас колонки: Заголовок + Контейнер для списка
+            col.innerHTML = `
+                <div class="day-header">
+                    <span>${dayNames[i]} <small>${displayDate}</small></span>
+                    <button class="copy-day-btn" onclick="copyFullDay('${dayNames[i]}', '${displayDate}', '${dStr}')" title="Копировать весь день">📋</button>
+                </div>
+                <div id="list-${dStr}" style="min-height: 50px;"></div>
+            `;
+            board.appendChild(col);
+
+            // Фильтруем задачи именно для этой даты
+            const dayTasks = tasks.filter(t => t.task_date === dStr);
+            const listContainer = document.getElementById(`list-${dStr}`);
+
+            dayTasks.forEach(t => {
+                const card = document.createElement('div');
+                card.className = `task-card ${t.is_completed ? 'completed' : ''}`;
+
+                // Клик по карточке открывает редактирование (если не нажата кнопка копирования)
+                card.onclick = (e) => {
+                    if(!e.target.closest('.copy-btn')) openTaskModal(t);
+                };
+
+                // Бейдж оплаты
+                let badge = '';
+                if(t.payment_amount > 0) {
+                    const cls = t.payment_type === 'to_pay' ? 'bg-to-pay' : 'bg-to-collect';
+                    const sign = t.payment_type === 'to_pay' ? '⬇' : '⬆';
+                    badge = `<span class="badge-pay ${cls}">${sign} ${t.payment_amount}₽</span>`;
+                }
+
+                card.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <b class="task-time">${t.task_time}</b>
+                        ${badge}
+                    </div>
+                    <span class="task-title">${t.title}</span>
+                    <div class="small text-muted text-truncate">${t.address || ''}</div>
+                    <button class="copy-btn" onclick="event.stopPropagation(); copyTask('${displayDate}', '${t.task_time}', '${t.title}', '${t.address}')" title="Копировать одну задачу">✈️</button>
+                `;
+                listContainer.appendChild(card);
+            });
+        }
+    }
+
+    // 3. УПРАВЛЕНИЕ МОДАЛЬНЫМ ОКНОМ
+    function openTaskModal(t = null) {
+        document.getElementById('mId').value = t ? t.id : '';
+        document.getElementById('mDate').value = t ? t.task_date : new Date().toISOString().split('T')[0];
+        document.getElementById('mTime').value = t ? t.task_time : '09:00';
+        document.getElementById('mTaskTitle').value = t ? t.title : '';
+        document.getElementById('mAddr').value = t ? t.address : '';
+        document.getElementById('mMoney').value = t ? t.payment_amount : 0;
+        document.getElementById('mPayType').value = t ? t.payment_type : 'none';
+        document.getElementById('mCompleted').checked = t ? (t.is_completed === 1) : false;
+
+        document.getElementById('mBtnDel').style.display = t ? 'block' : 'none';
+        document.getElementById('mTitle').innerText = t ? 'Правка задачи' : 'Новая заявка';
+
+        if(tModal) tModal.show();
+    }
+
+    // 4. СОХРАНЕНИЕ И УДАЛЕНИЕ (API)
+    async function saveTask() {
+        const id = document.getElementById('mId').value;
+        const data = {
+            task_date: document.getElementById('mDate').value,
+            task_time: document.getElementById('mTime').value,
+            title: document.getElementById('mTaskTitle').value,
+            address: document.getElementById('mAddr').value,
+            payment_amount: parseFloat(document.getElementById('mMoney').value) || 0,
+            payment_type: document.getElementById('mPayType').value,
+            is_completed: document.getElementById('mCompleted').checked ? 1 : 0,
+            priority: 1
+        };
+
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `/api/tasks/${id}` : '/api/tasks';
+
+        const r = await fetch(url, {
+            method: method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+
+        if (r.ok) {
+            if(tModal) tModal.hide();
+            load();
+        } else {
+            alert("Ошибка при сохранении на сервере");
+        }
+    }
+
+    async function deleteTask() {
+        const id = document.getElementById('mId').value;
+        if(confirm('Удалить эту задачу из плана?')) {
+            await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+            if(tModal) tModal.hide();
+            load();
+        }
+    }
+
+    // 5. ФУНКЦИИ КОПИРОВАНИЯ
+    function copyTask(date, time, title, addr) {
+        const text = `🚗 ПЛАН: ${date} [${time}]\n📌 ЗАДАЧА: ${title}\n📍 АДРЕС: ${addr || 'не указан'}`;
+        navigator.clipboard.writeText(text).then(() => {
+            alert('✈️ Задача скопирована!');
+        });
+    }
+
+    function copyFullDay(dayName, dateDisplay, dateIso) {
+        const dayTasks = tasks.filter(t => t.task_date === dateIso);
+        if (dayTasks.length === 0) {
+            alert("На этот день задач нет");
+            return;
+        }
+
+        // Сортировка по времени для порядка в списке
+        dayTasks.sort((a, b) => a.task_time.localeCompare(b.task_time));
+
+        let text = `🚗 ПЛАН НА ${dayName.toUpperCase()} (${dateDisplay}):\n`;
+        text += `------------------------------\n`;
+
+        dayTasks.forEach((t, index) => {
+            const payInfo = t.payment_amount > 0 ?
+                ` [${t.payment_type === 'to_pay' ? 'ВЫДАТЬ' : 'ПРИНЯТЬ'}: ${t.payment_amount}₽]` : '';
+
+            text += `${index + 1}. ⏰ ${t.task_time} — ${t.title}${payInfo}\n`;
+            if (t.address) text += `   📍 ${t.address}\n`;
+            text += `\n`;
+        });
+
+        text += `------------------------------\nВсего задач: ${dayTasks.length}`;
+
+        navigator.clipboard.writeText(text).then(() => {
+            alert(`📋 План на ${dayName} скопирован!`);
+        });
+    }
+
+    // Инициализация при полной загрузке страницы
+    window.onload = load;
+</script>
+
+</body>
+</html>

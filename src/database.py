@@ -12,6 +12,7 @@ except ImportError:
 class CargoDB:
     def __init__(self):
         self.init_db()
+        self.init_tasks_table()
 
     def get_connection(self):
         return sqlite3.connect(DB_PATH)
@@ -38,6 +39,38 @@ class CargoDB:
                     is_archived INTEGER DEFAULT 0,
                     created_at TIMESTAMP,          -- Дата первого появления
                     updated_at TIMESTAMP           -- Дата последнего обновления
+                )
+            ''')
+            conn.commit()
+
+    def init_tasks_table(self):
+        """Создает расширенную таблицу для задач водителя и финансовых расчетов"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS driver_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_date DATE NOT NULL,          -- Дата (ГГГГ-ММ-ДД)
+                    task_time TEXT,                   -- Время (ЧЧ:ММ)
+                    title TEXT NOT NULL,              -- Название (н-р, "Доставка ООО Вектор")
+                    description TEXT,                 -- Комментарий (н-р, "Подняться на 2 этаж")
+
+                    -- ГЕОГРАФИЯ И КОНТАКТЫ --
+                    address TEXT,                     -- Куда ехать
+                    contact_info TEXT,                -- Имя и телефон на месте
+
+                    -- СВЯЗКА С ОСНОВНОЙ БАЗОЙ (Опционально) --
+                    cargo_id TEXT,                    -- № накладной, если забор из ТК
+
+                    -- ФИНАНСОВЫЙ БЛОК --
+                    payment_amount REAL DEFAULT 0.0,  -- Сумма (руб)
+                    payment_type TEXT,                -- 'to_pay' (мы платим), 'to_collect' (берем с клиента), 'none'
+
+                    -- СЛУЖЕБНЫЕ ПОЛЯ --
+                    priority INTEGER DEFAULT 1,       -- 0-Low, 1-Normal, 2-High
+                    task_type TEXT DEFAULT 'once',    -- 'routine' (шаблон) или 'once' (разовая)
+                    is_completed INTEGER DEFAULT 0,    -- 0-План, 1-Выполнено
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             conn.commit()

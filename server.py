@@ -204,6 +204,94 @@ def analytics_page():
 def render_docs(filename='index.html'):
     return send_from_directory(DOCS_PATH, filename)
 
+# --- РОУТЫ ДЛЯ ЗАДАЧ ВОДИТЕЛЯ (PLANNER) ---
+@app.route('/api/tasks', methods=['GET', 'POST'])
+def handle_tasks_root():
+    conn = db.get_connection()
+    try:
+        if request.method == 'POST':
+            data = request.json
+            cursor = conn.cursor()
+            # 11 полей - 11 знаков вопроса
+            cursor.execute("""
+                INSERT INTO driver_tasks (
+                    task_date, task_time, title, description,
+                    address, contact_info, cargo_id, payment_amount,
+                    payment_type, priority, is_completed
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                data.get('task_date'),
+                data.get('task_time', '09:00'),
+                data.get('title'),
+                data.get('description', ''),
+                data.get('address', ''),
+                data.get('contact_info', ''),
+                data.get('cargo_id', ''),
+                float(data.get('payment_amount') or 0.0),
+                data.get('payment_type', 'none'),
+                int(data.get('priority', 1)),
+                int(data.get('is_completed', 0))
+            ))
+            conn.commit()
+            return jsonify({"status": "ok", "id": cursor.lastrowid})
+
+        # GET логика
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM driver_tasks WHERE task_date >= date('now', '-1 day') ORDER BY task_date, task_time")
+        return jsonify([dict(row) for row in cursor.fetchall()])
+    except Exception as e:
+        print(f"❌ [API Tasks Error]: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        conn.close()
+
+@app.route('/api/tasks/<int:task_id>', methods=['PUT', 'PATCH', 'DELETE'])
+def manage_single_task(task_id):
+    conn = db.get_connection()
+    try:
+        cursor = conn.cursor()
+        if request.method == 'DELETE':
+            cursor.execute("DELETE FROM driver_tasks WHERE id = ?", (task_id,))
+
+        elif request.method == 'PUT':
+            data = request.json
+            # Здесь обновляем 10 полей по ID
+            cursor.execute("""
+                UPDATE driver_tasks SET
+                task_date=?, task_time=?, title=?, description=?,
+                address=?, contact_info=?, payment_amount=?, payment_type=?,
+                priority=?, is_completed=?
+                WHERE id=?
+            """, (
+                data['task_date'], data['task_time'], data['title'],
+                data.get('description', ''), data.get('address', ''),
+                data.get('contact_info', ''), float(data.get('payment_amount') or 0.0),
+                data.get('payment_type', 'none'), int(data.get('priority', 1)),
+                int(data.get('is_completed', 0)), task_id
+            ))
+
+        elif request.method == 'PATCH':
+            data = request.json
+            if 'is_completed' in data:
+                cursor.execute("UPDATE driver_tasks SET is_completed = ? WHERE id = ?",
+                               (int(data['is_completed']), task_id))
+
+        conn.commit()
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        print(f"❌ [API Task Manage Error]: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        conn.close()
+
+
+@app.route('/planner')
+def planner_page():
+    """Рендеринг страницы планировщика"""
+    return render_template('planner.html', is_dev=IS_DEV_MODE)
+
+
 
 if __name__ == '__main__':
     mode_name = "DEVELOPMENT" if IS_DEV_MODE else "PRODUCTION"
