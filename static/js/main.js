@@ -140,28 +140,55 @@ function renderTable() {
 
         let icon = "";
 
-        if (isWaiting) {
+        // if (isWaiting) {
+        //     icon = "🚚 ";
+        //     displayStatus = r.status; // ПОДГОТОВКА К ОТПРАВКЕ...
+        //     statusClass = "text-primary";
+        //     tr.classList.remove('row-arrived');
+        // }
+        // else if (rawStatus.includes('прибыл') || rawStatus.includes('готов') || rawStatus.includes('хранение')) {
+        //     icon = "✅ ";
+        //     displayStatus = "Прибыл в ТК";
+        //     statusClass = "text-success";
+        //     tr.classList.add('row-arrived');
+        // }
+        // else if (rawStatus.includes('пути') || rawStatus.includes('транзит') || rawStatus.includes('принят')){
+        //     icon = "🚚 ";
+        //     displayStatus = "В пути";
+        //     statusClass = "text-primary";
+        // }
+        // else if (rawStatus.includes('оставк') || rawStatus.includes('до адреса')){
+        //     icon = "🚚 ";
+        //     displayStatus = "Доставка ТК ➡️ СКЛАД";
+        //     statusClass = "text-success";
+        //     tr.classList.add('row-arrived');
+        // }ПРИБЫЛ В ГОРОД НАЗНАЧЕНИЯ
+        // 1. САМЫЙ ВЫСОКИЙ ПРИОРИТЕТ - ДОСТАВКА (чтобы не перекрывалось "прибытием")
+        if (rawStatus.includes('оставк') || rawStatus.includes('до адреса') || rawStatus.includes('прибыл в город назначения'))  {
             icon = "🚚 ";
-            displayStatus = r.status; // ПОДГОТОВКА К ОТПРАВКЕ...
+            displayStatus = "Доставка ТК ➡️ СКЛАД";
+            statusClass = "text-success";
+            tr.classList.add('row-arrived');
+        }
+        // 2. ПОДГОТОВКА (isWaiting)
+        else if (isWaiting) {
+            icon = "🚚 ";
+            displayStatus = r.status;
             statusClass = "text-primary";
             tr.classList.remove('row-arrived');
         }
+        // 3. ПРИБЫЛ (Самовывоз)
         else if (rawStatus.includes('прибыл') || rawStatus.includes('готов') || rawStatus.includes('хранение')) {
             icon = "✅ ";
             displayStatus = "Прибыл в ТК";
             statusClass = "text-success";
             tr.classList.add('row-arrived');
         }
-        else if (rawStatus.includes('пути') || rawStatus.includes('транзит') || rawStatus.includes('принят')){
+        // 4. В ПУТИ
+        else if (rawStatus.includes('пути') || rawStatus.includes('транзит') || rawStatus.includes('принят')) {
             icon = "🚚 ";
             displayStatus = "В пути";
             statusClass = "text-primary";
-        }
-        else if (rawStatus.includes('оставк') || rawStatus.includes('до адреса')){
-            icon = "🚚 ";
-            displayStatus = "Доставка ТК ➡️ СКЛАД";
-            statusClass = "text-success";
-            tr.classList.add('row-arrived');
         }
 
         // Собираем итоговую строку статуса с ОДНОЙ иконкой

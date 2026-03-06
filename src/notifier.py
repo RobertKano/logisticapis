@@ -46,6 +46,8 @@ def send_tg_summary(report_json_path=CURRENT_STATE_FILE, force=False):
         # Исключаем БСД (по твоей просьбе)
         if "БСД" in tk: continue
 
+        if "ГРУЗ НА ТРАНЗИТНОМ СКЛАДЕ".lower() in status_text: continue
+
         # Проверка готовности
         if any(word in status_text for word in READY_STATUSES):
             tk_name = item['tk']

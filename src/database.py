@@ -37,6 +37,7 @@ class CargoDB:
                     total_price REAL DEFAULT 0.0,
                     payer_type TEXT,
                     is_archived INTEGER DEFAULT 0,
+                    archived_at TIMESTAMP,
                     created_at TIMESTAMP,          -- Дата первого появления
                     updated_at TIMESTAMP           -- Дата последнего обновления
                 )
@@ -87,14 +88,12 @@ class CargoDB:
         return places, weight, volume
 
     def upsert_cargo(self, item, is_archived=0):
-        """Использует COALESCE, чтобы created_at записывался только 1 раз"""
+        """Обновляет updated_at ТОЛЬКО при смене статуса"""
         p_val, w_val, v_val = self._parse_params(item.get('params', ''))
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            # Важное изменение: created_at = COALESCE(cargo.created_at, excluded.created_at)
-            # Это сохраняет самую первую дату записи
             cursor.execute('''
                 INSERT INTO cargo (
                     id, tk, sender, recipient, route,
@@ -104,7 +103,9 @@ class CargoDB:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     tk=excluded.tk,
-                    status=excluded.status,
+                    sender=excluded.sender,
+                    recipient=excluded.recipient,
+                    route=excluded.route,
                     arrival=excluded.arrival,
                     payment=excluded.payment,
                     total_price=excluded.total_price,
@@ -113,7 +114,12 @@ class CargoDB:
                     volume=excluded.volume,
                     is_archived=excluded.is_archived,
                     created_at=COALESCE(cargo.created_at, excluded.created_at),
-                    updated_at=excluded.updated_at
+
+                    -- ВАЖНО: Обновляем время только если статус ИЗМЕНИЛСЯ
+                    updated_at = CASE
+                        WHEN cargo.status = excluded.status THEN cargo.updated_at
+                        ELSE excluded.updated_at
+                    END
             ''', (
                 item.get('id'), item.get('tk'), item.get('sender'),
                 item.get('recipient'), item.get('route'),
@@ -124,6 +130,32 @@ class CargoDB:
                 now, now
             ))
             conn.commit()
+
+
+    def archive_stuck_bsd(self):
+        """
+        Авто-архивация БСД: если статус 'Прибыл в город...' висит > 28 часов,
+        считаем груз полученным и убираем с главной.
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            # 1.2 дня = примерно 28-29 часов (запас на случай задержки выгрузки)
+            cursor.execute("""
+                UPDATE cargo
+                SET
+                    status = 'Выдан (Авто)',
+                    archived_at = CURRENT_TIMESTAMP
+                WHERE tk = 'БСД'
+                  AND status LIKE '%Прибыл в город назначения%'
+                  AND archived_at IS NULL
+                  AND (julianday('now') - julianday(updated_at)) > 1.2
+            """)
+            affected = cursor.rowcount
+            if affected > 0:
+                conn.commit()
+                print(f"📦 [БСД] Авто-архивация: {affected} грузов перенесено в архив.")
+            return affected
+
 
 if __name__ == "__main__":
     pass

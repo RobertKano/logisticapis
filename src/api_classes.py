@@ -21,6 +21,9 @@ import json
 import requests
 from pathlib import Path
 from datetime import datetime, timedelta
+
+from playwright.sync_api import sync_playwright
+import pandas as pd
 from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
@@ -49,6 +52,10 @@ BK_SECRET_KEY = os.getenv("bk_appkey")
 
 VT_LOGIN = os.getenv("bsd_login")
 VT_PASS = os.getenv("bsd_pass")
+
+MT_LOGIN = os.getenv("magic_login")
+MT_PASS = os.getenv("magic_pass")
+
 
 class BaikalApiV2:
     """
@@ -416,35 +423,126 @@ class VitekaApiV1:
         return pages
 
 
-# def main():
-#     b = BaikalApiV2(BK_SECRET_KEY)
+class MagicTransAPI:
+    def __init__(self, login, password):
+        self.login = login
+        self.password = password
+        self.name = "Magic"
 
-#     list_of_cargo_codes = b.collect_cargocodes()
+    def get_raw_data(self):
+        """Авторизуется через JS-инъекцию и скачивает Excel из ЛК"""
+        print(f"[{self.name}] --- ЗАПУСК МОНИТОРИНГА (FINAL) ---")
 
-#     if list_of_cargo_codes:
-#         for i in list_of_cargo_codes:
-#             bc_detailed_info = b.get_order_info(i)
-#     else:
-#         print("Кажется список заказов в ТК Байкал пуст!")
+        with sync_playwright() as p:
+            # Для стабильности в продакшене лучше headless=True,
+            # но для финального теста можешь оставить False
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
 
-if __name__ == '__main__':
-    # Загружаем твои константы из этого же файла
-    print(f"\n{'='*50}\nТЕСТ КЛАССА ВИТЕКА\n{'='*50}")
+            try:
+                # 1. ШАГ: ЛОГИН
+                print(f"[{self.name}] 1. Переход на страницу логина...")
+                page.goto("https://magic-trans.ru", timeout=60000)
+                page.wait_for_timeout(3000)
 
-    if not VT_LOGIN:
-        print("[!] Ошибка: секреты Витеко не найдены в .env")
-    else:
-        vt_tester = VitekaApiV1(VT_LOGIN, VT_PASS)
-        html_data = vt_tester.get_raw_html_pages(count=2)
+                print(f"[{self.name}] 2. Принудительный ввод данных через JS...")
+                page.evaluate(f"document.getElementById('login-name').value = '{self.login}'")
+                page.evaluate(f"document.getElementById('password').value = '{self.password}'")
 
-        print(f"\nРезультат: получено {len(html_data)} страниц.")
+                print(f"[{self.name}] 3. Силовой клик (JS Trigger)...")
+                page.evaluate("document.getElementById('login').dispatchEvent(new MouseEvent('click', {bubbles: true}))")
 
-        # Краткая проверка содержимого через BS4 прямо здесь
-        for i, html in enumerate(html_data):
-            soup = BeautifulSoup(html, 'html.parser')
-            rows = soup.select('#orders-table-body tr')
-            print(f"Страница {i+1}: найдено {len(rows)} строк в таблице.")
-            if rows:
-                first_id = rows[0].find('td').get_text(strip=True)
-                print(f"   Первый ID на странице: {first_id}")
-    print(f"{'='*50}\n")
+                # Ждем прогрузки сессии
+                page.wait_for_timeout(10000)
+
+                # 2. ШАГ: ПЕРЕХОД В ЗАКАЗЫ (Где кнопка Excel)
+                print(f"[{self.name}] 4. Переход в раздел заказов...")
+                page.goto("https://magic-trans.ru", timeout=60000, wait_until="networkidle")
+
+                # Проверка: если URL не заказы, пробуем еще раз
+                if "/personal/orders/" not in page.url:
+                    page.goto("https://magic-trans.ru/personal/orders/", timeout=60000)
+
+                # 3. ШАГ: СКАЧИВАНИЕ
+                print(f"[{self.name}] 5. Ожидание выгрузки Excel...")
+                try:
+                    with page.expect_download(timeout=60000) as download_info:
+                        # Используем селектор из твоего HTML-листинга
+                        page.evaluate("document.querySelector('a.excel_btn').click()")
+
+                    download = download_info.value
+                    # Сохраняем в корень data, как ты просил
+                    temp_path = os.path.join("data", "magic_tmp.xlsx")
+                    download.save_as(temp_path)
+                    print(f"[{self.name}] ✅ Файл получен успешно.")
+
+                    browser.close()
+                    return self._parse_excel(temp_path)
+
+                except Exception as e:
+                    print(f"[{self.name}] ❌ Ошибка скачивания: {e}")
+                    page.screenshot(path="data/magic_orders_error.png")
+                    browser.close()
+                    return []
+
+            except Exception as e:
+                print(f"[{self.name}] 🔥 КРИТИЧЕСКАЯ ОШИБКА: {e}")
+                if 'browser' in locals(): browser.close()
+                return []
+
+    def _parse_excel(self, file_path):
+        """Парсинг Excel строго по списку колонок из консоли"""
+        try:
+            # Читаем Excel
+            df = pd.read_excel(file_path, engine='openpyxl')
+
+            # Мы вывели список колонок, теперь используем их точные имена
+            results = []
+            for _, row in df.iterrows():
+                # 1. Номер груза (Ключевой ID)
+                cargo_id = str(row.get('Номер груза', '')).strip()
+                if not cargo_id or cargo_id == 'nan':
+                    continue
+
+                # 2. Параметры (Обрати внимание на 'Обьем' через мягкий знак)
+                p_str = f"{row.get('Количество мест', 0)}М | {row.get('Вес, кг', 0)}КГ | {row.get('Обьем, м3', 0)}М3"
+
+                # 3. Сумма (Сумма, руб.)
+                raw_price = str(row.get('Сумма, руб.', '0')).replace(',', '.').replace(' ', '')
+                total_price = float(''.join(c for c in raw_price if c.isdigit() or c == '.') or 0.0)
+
+                item = {
+                    "tk": "МАДЖИК",
+                    "id": cargo_id,
+                    "sender": str(row.get('Отправитель', 'Н/Д')),
+                    "recipient": str(row.get('Получатель', 'Н/Д')),
+                    "route": str(row.get('Маршрут перевозки', 'Н/Д')),
+                    "status": str(row.get('Статус', 'Н/Д')).upper(),
+                    "params": p_str,
+                    "arrival": str(row.get('Ориентировочная дата прибытия', 'Н/Д')),
+                    "payment": str(row.get('Статус оплаты', 'Н/Д')),
+                    "total_price": total_price,
+                    "payer_type": "recipient" if "ЮЖНЫЙ ФОРПОСТ" in str(row.get('Плательщик', '')) else "sender",
+                    "is_manual": False
+                }
+                results.append(item)
+
+            if os.path.exists(file_path):
+                os.remove(file_path)
+
+            print(f"[{self.name}] Парсинг завершен. Найдено строк: {len(results)}")
+            return results
+
+        except Exception as e:
+            print(f"[{self.name}] ❌ Ошибка обработки Excel: {e}")
+            return []
+
+
+if __name__ == "__main__":
+    # Если данные уже в окружении (MT_LOGIN / MT_PASS), запустится сразу
+    if 'MT_LOGIN' in globals() and 'MT_PASS' in globals():
+        magic = MagicTransAPI(MT_LOGIN, MT_PASS)
+        data = magic.get_raw_data()
+        print(f"\n[Test] Найдено: {len(data)} грузов")
+        for c in data[:3]:
+            print(f"-> {c['id']} | {c['status']} | {c['total_price']} руб.")

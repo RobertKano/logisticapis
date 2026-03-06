@@ -28,6 +28,107 @@ from database import CargoDB
 import settings as st
 
 
+class MemoryManager:
+    def __init__(self, db, last_state_file):
+        self.db = db
+        self.file = last_state_file
+
+    def get_last_active(self):
+        if os.path.exists(self.file):
+            with open(self.file, 'r', encoding='utf-8') as f:
+                try:
+                    return json.load(f)
+                except:
+                    return []
+        return []
+
+    def restore_ghosts(self, current_results):
+        """Возвращает список грузов, которые пропали из API, но еще живы (48ч)"""
+        current_ids = {str(r['id']) for r in current_results}
+        last_active = self.get_last_active()
+
+        ghosts = []
+        to_archive_missing = []
+
+        for item in last_active:
+            cargo_id = str(item['id'])
+            if cargo_id in current_ids:
+                continue
+
+            # 1. Если статус уже финальный - не ждем, сразу в архив
+            status_upper = str(item.get('status', '')).upper()
+            is_finished = any(word in status_upper for word in ["ВЫДАН", "ДОСТАВЛЕН", "АРХИВ", "ПОЛУЧЕН"])
+
+            if is_finished:
+                item['status'] = "ВЫДАН (АВТОАРХИВ)"
+                to_archive_missing.append(item)
+                continue
+
+            # 2. Проверка 48 часов через БД
+            try:
+                with self.db.get_connection() as conn:
+                    res = conn.execute("SELECT updated_at FROM cargo WHERE id = ?", (cargo_id,)).fetchone()
+                    if res and res[0]:
+                        last_seen = datetime.strptime(res[0], '%Y-%m-%d %H:%M:%S')
+                        if (datetime.now() - last_seen).total_seconds() < 48 * 3600:
+                            # Помечаем "призрака" восклицательным знаком
+                            if "!" not in str(item.get('status')):
+                                item['status'] = f"! {item.get('status')} (НЕ В API)"
+                            ghosts.append(item)
+                            continue
+            except Exception as e:
+                print(f"[Memory] Ошибка времени для {cargo_id}: {e}")
+
+            # 3. Иначе - в архив (пропал давно или нет в БД)
+            item['status'] = "ВЫДАН (АВТОАРХИВ)"
+            to_archive_missing.append(item)
+
+        return ghosts, to_archive_missing
+
+
+class CargoClassifier:
+    def __init__(self, db, exclude_list):
+        self.db = db
+        self.exclude = [k.lower() for k in exclude_list]
+
+    def _get_stuck_bsd_ids(self):
+        """Получаем ID БСД, которые база пометила архивными (28ч)"""
+        try:
+            with self.db.get_connection() as conn:
+                res = conn.execute("""
+                    SELECT id FROM cargo WHERE tk = 'БСД'
+                    AND (status LIKE '%ПРИБЫЛ%' OR status LIKE '%ДОСТАВКА%')
+                    AND archived_at IS NOT NULL
+                """).fetchall()
+                return {str(row[0]) for row in res}
+        except: return set()
+
+    def classify(self, results_pool, missing_from_api):
+        stuck_ids = self._get_stuck_bsd_ids()
+        active, archive_api = [], []
+        today_str = datetime.now().strftime('%Y-%m-%d')
+
+        for r in results_pool:
+            cargo_id = str(r.get('id'))
+            status_low = str(r.get('status', '')).lower()
+
+            is_finished = any(k in status_low for k in self.exclude)
+            is_stuck = cargo_id in stuck_ids
+
+            if is_finished or is_stuck:
+                if is_stuck: r['status'] = "ВЫДАН (АВТОАРХИВ БСД)"
+                if r.get('tk') == "БСД" and r.get('arrival') == "САМОВЫВОЗ":
+                    r['arrival'] = today_str
+                archive_api.append(r)
+            else:
+                active.append(r)
+
+        full_archive = archive_api + missing_from_api
+        active.sort(key=lambda x: str(x.get('arrival') or "9999"))
+        return active, full_archive
+
+
+
 def cleanup_old_reports(keep_count=7):
     """Оставляет только N последних файлов report_*.json"""
     import glob
@@ -73,8 +174,6 @@ def update_permanent_archive(new_archive_items):
         with open(st.HISTORY_FILE, 'w', encoding='utf-8') as f:
             json.dump(old_history, f, ensure_ascii=False, indent=4)
         print(f"[Archive] В JSON добавлено: {added_count}. Всего: {len(old_history)}")
-
-
 
 def clean_name(text, is_city=False):
     if not text or not isinstance(text, str): return "???"
@@ -307,10 +406,9 @@ def parse_pecom(data):
 
 
 def parse_viteka(html_list):
-    """Парсинг списка HTML-страниц от Витеко (БСД)"""
+    """Парсинг БСД с глубокой очисткой получателя и статусов"""
     results = []
-    if not html_list or not isinstance(html_list, list):
-        return results
+    if not html_list: return results
 
     for html in html_list:
         soup = BeautifulSoup(html, 'html.parser')
@@ -320,77 +418,133 @@ def parse_viteka(html_list):
             tds = row.find_all('td')
             if len(tds) < 12: continue
 
-            # 1. ID и первичный фильтр
-            order_id = tds[0].get_text(strip=True).replace(' ', '')
-            if not order_id or order_id[0].isdigit():
+            # 1. Поиск номера накладной через регулярное выражение
+            # Шаблон: 2 заглавные буквы, 2 цифры, дефис, цифры (например, СП00-1234)
+            order_text = tds[0].get_text(strip=True).upper()
+            match = re.search(r'([А-ЯA-Z]{2}\d{2}-\d+)', order_text)
+
+            if match:
+                order_id = match.group(1) # Забираем найденный номер целиком
+            else:
+                # Если в ячейке только цифры (заявка) - пропускаем
                 continue
 
-            # 2. ОБРАБОТКА СТАТУСА И УМНОЙ ДАТЫ
+            # 2. ЧИСТКА ПОЛУЧАТЕЛЯ (Убираем "ИЗМЕНИТЬ ПОЛУЧАТЕЛЯ...")
+            # Берем только текст ДО кнопок/форм внутри ячейки
+            raw_recipient = tds[7].get_text(" ", strip=True)
+            # Отсекаем всё, что начинается со слова "ИЗМЕНИТЬ" или "ПОМЕНЯТЬ"
+            clean_recipient_raw = re.split(r'ИЗМЕНИТЬ|ПОМЕНЯТЬ', raw_recipient)[0].strip()
+            recipient = clean_name(clean_recipient_raw)
+
+            # 3. ЧИСТКА СТАТУСА (Делаем максимально просто для main.js)
             status_raw = tds[1].get_text(" ", strip=True).upper()
 
-            # Ищем подстроку типа "ОЖИДАЕТСЯ 02.03.26" или просто дату
-            date_pattern = r',?\s*ОЖИДАЕТСЯ\s*\d{2}\.\d{2}\.\d{2,4}|\d{2}\.\d{2}\.\d{2,4}'
+            if "ВЫДАН" in status_raw:
+                display_status = "ВЫДАН"
+            elif "ПРИБЫЛ" in status_raw or "СКЛАД" in status_raw:
+                display_status = "ПРИБЫЛ В ТК"
+            else:
+                # Для всех остальных состояний (пути, отправка, ожидается)
+                # Даем просто "В ПУТИ", чтобы main.js не рисовал (+4Д)
+                display_status = "В ПУТИ"
 
-            # 1. Сохраняем чистый статус БЕЗ даты для JSON
-            clean_status = re.sub(date_pattern, '', status_raw).strip(", ")
-
-            # 2. Ищем дату только для поля 'arrival'
+            # 4. ДАТА ПРИБЫТИЯ (Чистая дата для БД)
             arrival_match = re.search(r'(\d{2})\.(\d{2})\.(\d{2,4})', status_raw)
-
-            if "ОЖИДАЕТ ОТПРАВКИ" in status_raw:
-                future_date = datetime.now() + timedelta(days=4)
-                arrival = future_date.strftime('%Y-%m-%d')
-                display_status = "ОТПРАВКА (+4Д)"
-            elif arrival_match:
+            if arrival_match:
                 d, m, y = arrival_match.groups()
                 full_year = f"20{y}" if len(y) == 2 else y
                 arrival = f"{full_year}-{m}-{d}"
-                display_status = clean_status # Теперь тут просто "В ПУТИ"
             else:
-                arrival = "САМОВЫВОЗ"
-                display_status = clean_status
+                arrival = (datetime.now() + timedelta(days=4)).strftime('%Y-%m-%d')
 
-
-            # 3. Параметры (Вес, Объем, Места)
-            p_div = tds[3]
+            # 5. ПАРАМЕТРЫ
             def get_val(label):
-                found = p_div.find('span', string=re.compile(label))
+                found = tds[3].find('span', string=re.compile(label))
                 return found.find_next('span').get_text(strip=True) if found else "0"
 
-            m_count = get_val("Кол-во мест:")
-            w_val = get_val("Вес:").replace('кг', '').strip()
-            v_val = get_val("Объем:").replace('м3', '').strip()
+            payment_raw = tds[8].get_text(strip=True) # Берем чистый текст из 8-й колонки
 
-            # 4. Цена и Оплата
-            price_raw = tds[11].get_text(strip=True)
-            price_clean = re.sub(r'[^\d.]', '', price_raw.replace(',', '.'))
-            total_price = float(price_clean) if price_clean else 0.0
-
-            # Унификация оплаты для фильтров
-            payment_raw = tds[8].get_text(strip=True).lower()
-            if "не оплачена" in payment_raw:
+            # Сначала проверяем на негативный статус, чтобы он не попал в "Оплачено"
+            if "Не оплачена" in payment_raw:
                 payment_display = "К оплате"
-            elif "оплачена" in payment_raw:
+            elif "Оплачена" in payment_raw:
                 payment_display = "Оплачено"
             else:
-                payment_display = payment_raw.capitalize()
+                # На случай, если БСД пришлет пустую строку или "В обработке"
+                payment_display = "Н/Д"
 
             results.append({
-                "tk": "БСД", # Всегда БСД для архива
+                "tk": "БСД",
                 "id": order_id,
                 "sender": clean_name(tds[6].get_text(strip=True)),
-                "recipient": clean_name(tds[7].find('a').get_text(strip=True) if tds[7].find('a') else "ЮЖНЫЙ ФОРПОСТ"),
+                "recipient": recipient, # ТЕПЕРЬ ТУТ ТОЛЬКО "ЮЖНЫЙ ФОРПОСТ"
                 "route": f"{clean_name(tds[4].get_text(strip=True), True)} -> {clean_name(tds[5].get_text(strip=True), True)}",
                 "status": display_status,
-                "params": f"{m_count}М | {w_val}КГ | {v_val}М3",
+                "params": f"{get_val('мест')}М | {get_val('Вес').replace('кг','')}КГ | {get_val('Объем').replace('м3','')}М3",
                 "arrival": arrival,
                 "payment": payment_display,
-                "total_price": total_price,
+                "total_price": float(re.sub(r'[^\d.]', '', tds[11].get_text(strip=True).replace(',','.')) or 0),
                 "payer_type": "recipient",
                 "is_manual": False
             })
     return results
 
+
+def parse_magic(items_list):
+    """Парсинг и глубокая очистка данных МЭДЖИК под твой main.js"""
+    results = []
+    if not items_list: return results
+
+    for item in items_list:
+        # 1. ПЕРЕИМЕНОВАНИЕ ТК
+        tk_name = "МЭДЖИК"
+
+        # 2. ЧИСТКА РОУТОВ (Сплитуем "Москва - Астрахань" через дефис)
+        route_raw = str(item.get('route', 'Н/Д'))
+        if " - " in route_raw:
+            parts = route_raw.split(" - ")
+            # Чистим города через твой clean_name с флагом True
+            from_city = clean_name(parts[0].strip(), True)
+            to_city = clean_name(parts[1].strip(), True)
+            route = f"{from_city} -> {to_city}"
+        else:
+            route = clean_name(route_raw, True)
+
+        # 3. ЛОГИКА СТАТУСОВ (Синхронизация с твоим main.js)
+        status_raw = str(item.get('status', '')).upper()
+
+        # Если в Excel есть "ДОСТАВКЕ", даем статус со словом "ДОСТАВКА"
+        # Твой JS (rawStatus.includes('оставк')) поймает это и покажет "Доставка ТК ➡️ СКЛАД"
+        if "ДОСТАВКЕ" in status_raw or "ЭКСПЕДИРОВАНИЕ" in status_raw:
+            display_status = "ДОСТАВКА ДО СКЛАДА"
+        elif "ПРИБЫЛ" in status_raw:
+            display_status = "ПРИБЫЛ В ГОРОД НАЗНАЧЕНИЯ"
+        else:
+            display_status = status_raw
+
+        # 4. ДАТА ДЛЯ БД (Всегда YYYY-MM-DD)
+        arrival_raw = item.get('arrival', '')
+        try:
+            dt = datetime.strptime(arrival_raw, '%d.%m.%Y')
+            arrival_db = dt.strftime('%Y-%m-%d')
+        except:
+            arrival_db = datetime.now().strftime('%Y-%m-%d')
+
+        results.append({
+            "tk": tk_name,
+            "id": item.get('id'),
+            "sender": clean_name(item.get('sender', 'Н/Д')),
+            "recipient": clean_name(item.get('recipient', 'ЮЖНЫЙ ФОРПОСТ')),
+            "route": route,
+            "status": display_status,
+            "params": item.get('params'),
+            "arrival": arrival_db,
+            "payment": item.get('payment'),
+            "total_price": float(item.get('total_price', 0)),
+            "payer_type": "recipient" if "ЮЖНЫЙ ФОРПОСТ" in str(item.get('Плательщик', '')).upper() else "sender",
+            "is_manual": False
+        })
+    return results
 
 # --- ФУНКЦИИ СОХРАНЕНИЯ ---
 
@@ -405,92 +559,47 @@ def save_json_report(data, file_path):
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# --- ОСНОВНОЙ ПУЛЬТ ---
 
 def run_main_parser():
-    # 0. ИНИЦИАЛИЗАЦИЯ БАЗЫ ДАННЫХ
     db = CargoDB()
+    memory = MemoryManager(db, st.LAST_STATE_FILE)
+    classifier = CargoClassifier(db, ["выдан", "доставлен", "завершен", "архив", "выдача", "получен"])
 
-    # 1. ЗАГРУЗКА ДАННЫХ (Используем нормализованный путь из settings)
     if not os.path.exists(st.RAW_DATA_FILE):
         return print(f"Ошибка: Файл не найден: {st.RAW_DATA_FILE}")
 
     with open(st.RAW_DATA_FILE, 'r', encoding='utf-8') as f:
-        try:
-            raw_json = json.load(f)
-        except Exception as e:
-            return print(f"Ошибка чтения JSON: {e}")
+        try: raw_json = json.load(f)
+        except Exception as e: return print(f"Ошибка чтения JSON: {e}")
 
+    # 1. Сбор данных
     raw_results = []
-
-    # Сбор данных от всех ТК (Твои функции парсинга)
     if "Baikal" in raw_json: raw_results.extend(parse_baikal(raw_json["Baikal"]))
     if "Dellin" in raw_json: raw_results.extend(parse_dellin(raw_json["Dellin"]))
     if "Pecom" in raw_json: raw_results.extend(parse_pecom(raw_json["Pecom"]))
-    if "BSD" in raw_json:
-        print(f"[Parser] Найдено страниц БСД: {len(raw_json['BSD'])}")
-        viteka_items = parse_viteka(raw_json["BSD"])
-        print(f"[Parser] БСД успешно распарсена: {len(viteka_items)} грузов")
-        raw_results.extend(viteka_items)
+    if "BSD" in raw_json: raw_results.extend(parse_viteka(raw_json["BSD"]))
+    if "Magic" in raw_json: raw_results.extend(parse_magic(raw_json["Magic"]))
 
-    # 2. ЛОГИКА "ПАМЯТИ": Сравниваем с прошлым состоянием
-    current_ids = {str(r['id']) for r in raw_results}
+    # 2. Подготовка базы (28ч для БСД)
+    try: db.archive_stuck_bsd()
+    except Exception as e: print(f"[Parser] Ошибка авто-архивации БСД: {e}")
 
-    if os.path.exists(st.LAST_STATE_FILE):
-        with open(st.LAST_STATE_FILE, 'r', encoding='utf-8') as f:
-            try:
-                last_active = json.load(f)
-            except:
-                last_active = []
-    else:
-        last_active = []
+    # 3. Обработка "памяти" и Классификация
+    ghosts, missing_from_api = memory.restore_ghosts(raw_results)
+    raw_results.extend(ghosts)
 
-    # Ищем тех, кто пропал из API (значит, выдали или удалили)
-    missing_items = []
-    for item in last_active:
-        if str(item['id']) not in current_ids:
-            # Помечаем для архива
-            item['status'] = "ВЫДАН (АВТОАРХИВ)"
-            missing_items.append(item)
+    active, to_archive = classifier.classify(raw_results, missing_from_api)
 
-    # 3. КЛАССИФИКАЦИЯ
-    EXCLUDE = ["выдан", "доставлен", "завершен", "архив", "выдача", "получен"]
+    # 4. Сохранение в БД
+    for item in to_archive: db.upsert_cargo(item, is_archived=1)
+    for item in active: db.upsert_cargo(item, is_archived=0)
 
-    active = sorted(
-        [r for r in raw_results if not any(k in str(r.get('status', '')).lower() for k in EXCLUDE)],
-        key=lambda x: str(x.get('arrival') or "9999")
-    )
-
-    # Заказы, которые ПРЯМО СЕЙЧАС имеют статус "Выдан" в API
-    just_finished_api = [r for r in raw_results if any(k in str(r.get('status', '')).lower() for k in EXCLUDE)]
-
-    # ОБЪЕДИНЯЕМ ДЛЯ АРХИВАЦИИ
-    to_archive = just_finished_api + missing_items
-
-    # Спец-логика для БСД: Фиксируем дату выдачи перед отправкой в архив
-    today_str = datetime.now().strftime('%Y-%m-%d')
-    for r in to_archive:
-        if r.get('tk') == "БСД":
-            if r.get('arrival') == "САМОВЫВОЗ" or "ПРОГНОЗ" in str(r.get('status')):
-                r['arrival'] = today_str
-                r['status'] = str(r.get('status')).replace(" (ПРОГНОЗ +4Д)", "").replace("🚚 ", "").strip()
-
-    # --- SQLITE: СОХРАНЕНИЕ АРХИВА ---
-    for item in to_archive:
-        db.upsert_cargo(item, is_archived=1)
-
-    # Сохраняем в постоянный архив JSON (страховка)
+    # 5. Обновление архивов и стейта
     update_permanent_archive(to_archive)
-
-    # --- SQLITE: СОХРАНЕНИЕ АКТИВА ---
-    for item in active:
-        db.upsert_cargo(item, is_archived=0)
-
-    # Сохраняем текущий актив для сравнения при следующем запуске
     with open(st.LAST_STATE_FILE, 'w', encoding='utf-8') as f:
         json.dump(active, f, ensure_ascii=False, indent=4)
 
-    # 4. ПОДГОТОВКА JSON ДЛЯ ФРОНТЕНДА
+    # 6. Формирование истории и финальных отчетов
     full_history = []
     if os.path.exists(st.HISTORY_FILE):
         with open(st.HISTORY_FILE, 'r', encoding='utf-8') as f:
@@ -517,26 +626,13 @@ def run_main_parser():
         "archive": full_history
     }
 
-    # 5. КОНСОЛЬНЫЙ ВЫВОД
-    print(f"\nОТЧЕТ ТРАНСПОРТ | {report_time}")
-    print("="*150)
-    print(f"{'ТК':<15} | {'№ Накладной':<18} | {'Отправитель':<20} | {'Маршрут':<25} | {'Статус':<30} | {'Прибытие':<10}")
-    print("-"*150)
-    for r in active:
-        print(f"{r['tk']:<15} | {str(r['id']):<18} | {str(r['sender'])[:19]:<20} | "
-              f"{str(r['route'])[:24]:<25} | {str(r['status'])[:29]:<30} | {str(r['arrival'] or 'Н/Д')[:10]:<10}")
-
-    # 6. СОХРАНЕНИЕ
     date_str = datetime.now().strftime('%Y-%m-%d')
     daily_report_path = os.path.join(st.DATA_DIR, f"report_{date_str}.json")
-
     save_json_report(json_data, daily_report_path)
     save_json_report(json_data, st.CURRENT_STATE_FILE)
 
-    # 7. ОЧИСТКА (7 последних)
     cleanup_old_reports(7)
-
-    print(f"\n[✓] Обработка завершена. Активно: {len(active)}, В базу/архив: {len(to_archive)}")
+    print(f"\n[✓] Обработка завершена. Активно: {len(active)}, В архив: {len(to_archive)}")
 
 
 if __name__ == "__main__":
