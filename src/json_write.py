@@ -46,14 +46,18 @@ def get_all_data_in_json():
     print("--- ШАГ 1: Параллельный сбор (ДЛ, ПЭК, БСД, Байкал) ---")
     with ThreadPoolExecutor(max_workers=4) as executor:
         future_dl = executor.submit(d.orders_info)
+
         future_pc = executor.submit(p.fetch_detailed_data_hardcoded)
         future_vt = executor.submit(vt.get_raw_html_pages, count=2)
         future_bk = executor.submit(fetch_baikal_parallel)
 
         try:
             dl_curr_ord = future_dl.result(timeout=45)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [1/5] Деловые Линии: ОК ({len(dl_curr_ord)} зак.)")
             pc_curr_ord = future_pc.result(timeout=45)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [2/5] ПЭК: ОК ({len(pc_curr_ord)} зак.)")
             vt_raw_html_list = future_vt.result(timeout=45)
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] [4/5] БСД: ОК ({len(vt_raw_html_list)} зак.)")
             bc_detailed_info = future_bk.result(timeout=45)
         except Exception as e:
             print(f"⚠️ Ошибка в параллельном блоке: {e}")

@@ -94,7 +94,8 @@ def api_analytics():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # 1. Сводка по ТК (Вес, Цена, Цена за кг)
+        # 1. ОБЩАЯ СВОДКА (Карточки сверху)
+        # Учитываем всё, где участвует "ЮЖНЫЙ ФОРПОСТ" и груз активен
         cursor.execute("""
             SELECT
                 SUM(places) as total_places,
@@ -103,27 +104,16 @@ def api_analytics():
                 ROUND(SUM(total_price), 2) as total_unpaid
             FROM cargo
             WHERE is_archived = 0
-              AND payer_type = 'recipient' -- УЧИТЫВАЕМ ТОЛЬКО НАС
-        """)
-        tk_stats = [dict(row) for row in cursor.fetchall()]
-
-        # 2. Общие показатели склада (только актив)
-        cursor.execute("""
-            SELECT
-                SUM(places) as total_places,
-                ROUND(SUM(weight), 1) as total_weight,
-                ROUND(SUM(volume), 2) as total_volume,
-                ROUND(SUM(total_price), 2) as total_unpaid
-            FROM cargo WHERE is_archived = 0
+              AND (sender LIKE '%ЮЖНЫЙ ФОРПОСТ%' OR recipient LIKE '%ЮЖНЫЙ ФОРПОСТ%')
         """)
         summary = dict(cursor.fetchone())
 
         return jsonify({
             "status": "ok",
-            "tk_stats": tk_stats,
             "summary": summary
         })
     except Exception as e:
+        print(f"[Analytics Summary Error] {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         conn.close()
@@ -131,51 +121,45 @@ def api_analytics():
 
 @app.route('/api/analytics/tk-compare')
 def api_tk_compare():
+    # КЛЮЧЕВАЯ ПРАВКА: получаем количество дней из URL, по умолчанию 30
+    days = request.args.get('days', 30)
     try:
         conn = db.get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # ОБНОВЛЕННЫЙ ЗАПРОС: Считаем сроки от даты создания (created_at)
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 tk,
+                CASE
+                    WHEN weight <= 30 THEN '📦 Малые (до 30кг)'
+                    WHEN weight > 30 AND weight <= 150 THEN '📦 Средние (30-150кг)'
+                    WHEN weight > 150 AND weight <= 1000 THEN '🚚 Крупные (150-1т)'
+                    ELSE '🚜 Тонники (свыше 1т)'
+                END as category,
                 COUNT(id) as total_shipments,
 
-                -- 1. СРОК: Разница между прибытием и первым появлением в базе
-                -- ABS гарантирует отсутствие минусов, а COALESCE подстрахует от пустых дат
-                ROUND(AVG(ABS(JULIANDAY(arrival) - JULIANDAY(COALESCE(created_at, updated_at)))), 1) as avg_days,
+                -- ФИКС СРОКОВ: считаем реальные дни (от создания до сегодня/архива)
+                ROUND(AVG(ABS(JULIANDAY(COALESCE(archived_at, date('now'))) - JULIANDAY(created_at))), 1) as avg_days,
 
-                -- 2. ОБЪЕМНЫЙ ВЕС (Коэффициент 250)
-                ROUND(SUM(volume * 250), 0) as volume_weight,
-
-                -- 3. ВЕС К ОПЛАТЕ (Максимум по каждой строке)
                 ROUND(SUM(CASE WHEN weight > (volume * 250) THEN weight ELSE (volume * 250) END), 0) as pay_weight,
-
-                -- 4. СТОИМОСТЬ ЗА КГ (От веса к оплате)
                 ROUND(SUM(total_price) / NULLIF(SUM(CASE WHEN weight > (volume * 250) THEN weight ELSE (volume * 250) END), 0), 2) as cost_per_kg,
-
-                -- 5. СТОИМОСТЬ ЗА МЕСТО
-                ROUND(SUM(total_price) / NULLIF(SUM(places), 0), 2) as cost_per_place,
-
+                ROUND(SUM(total_price) / NULLIF(SUM(volume), 0), 0) as cost_per_m3,
                 ROUND(SUM(total_price), 2) as total_spent
             FROM cargo
-            WHERE updated_at >= date('now', '-30 days')
-              AND payer_type = 'recipient'
-            GROUP BY tk
-            ORDER BY total_spent DESC
+            WHERE updated_at >= date('now', '-{days} days')
+              AND (sender LIKE '%ЮЖНЫЙ ФОРПОСТ%' OR recipient LIKE '%ЮЖНЫЙ ФОРПОСТ%')
+              AND weight > 0 AND total_price > 0
+            GROUP BY tk, category
+            ORDER BY tk ASC, weight ASC
         """)
-
         stats = [dict(row) for row in cursor.fetchall()]
         return jsonify(stats)
     except Exception as e:
-        print(f"[Analytics Error] {e}")
+        print(f"Error: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
-
-
-
 # --- РОУТЫ ---
 @app.route('/')
 def index():

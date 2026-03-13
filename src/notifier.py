@@ -43,7 +43,6 @@ def send_tg_summary(report_json_path=CURRENT_STATE_FILE, force=False):
         route_parts = route.replace('➡️', '->').split('->')
         if "АСТРА" not in route_parts[-1]: continue
 
-        # Исключаем БСД (по твоей просьбе)
         if "БСД" in tk: continue
 
         if "ГРУЗ НА ТРАНЗИТНОМ СКЛАДЕ".lower() in status_text: continue

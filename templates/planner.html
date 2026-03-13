@@ -178,8 +178,11 @@
                     </div>
                     <span class="task-title">${t.title}</span>
                     <div class="small text-muted text-truncate">${t.address || ''}</div>
-                    <button class="copy-btn" onclick="event.stopPropagation(); copyTask('${displayDate}', '${t.task_time}', '${t.title}', '${t.address}')" title="Копировать одну задачу">✈️</button>
+                    <button class="copy-btn"
+                    onclick="event.stopPropagation(); copyTaskById('${t.id}', '${displayDate}')"
+                    title="Копировать одну задачу">✈️</button>
                 `;
+
                 listContainer.appendChild(card);
             });
         }
@@ -248,6 +251,15 @@
         navigator.clipboard.writeText(text).then(() => {
             alert('✈️ Задача скопирована!');
         });
+    }
+
+    function copyTaskById(taskId, displayDate) {
+    // Ищем задачу в массиве tasks по ID
+        const t = tasks.find(item => String(item.id) === String(taskId));
+        if (!t) return;
+
+        // Вызываем твою оригинальную функцию с ЧИСТЫМИ данными
+        copyTask(displayDate, t.task_time, t.title, t.address);
     }
 
     function copyFullDay(dayName, dateDisplay, dateIso) {

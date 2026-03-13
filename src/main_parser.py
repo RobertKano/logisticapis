@@ -50,14 +50,30 @@ class MemoryManager:
         ghosts = []
         to_archive_missing = []
 
+
+        ghosts = []
+        to_archive_missing = []
+
+
         for item in last_active:
             cargo_id = str(item['id'])
+
             if cargo_id in current_ids:
                 continue
 
             # 1. Если статус уже финальный - не ждем, сразу в архив
             status_upper = str(item.get('status', '')).upper()
-            is_finished = any(word in status_upper for word in ["ВЫДАН", "ДОСТАВЛЕН", "АРХИВ", "ПОЛУЧЕН"])
+
+            # Уточняем список: "ДОСТАВЛЕН" для Мэджика - это промежуточный статус.
+            # Оставляем только те слова, которые гарантируют, что груз у нас/выдан.
+            # Если это Мэджик, мы игнорируем слово "ДОСТАВЛЕН" как повод для архива.
+            final_keywords = ["ВЫДАН", "АРХИВ", "ПОЛУЧЕН", "ЗАВЕРШЕН"]
+
+            # Если это НЕ Мэджик, можно оставить "ДОСТАВЛЕН" (например для ДЛ)
+            if item.get('tk') != 'МЭДЖИК':
+                final_keywords.append("ДОСТАВЛЕН")
+
+            is_finished = any(word in status_upper for word in final_keywords)
 
             if is_finished:
                 item['status'] = "ВЫДАН (АВТОАРХИВ)"
@@ -126,7 +142,6 @@ class CargoClassifier:
         full_archive = archive_api + missing_from_api
         active.sort(key=lambda x: str(x.get('arrival') or "9999"))
         return active, full_archive
-
 
 
 def cleanup_old_reports(keep_count=7):
@@ -355,7 +370,6 @@ def parse_dellin(data):
 
 def parse_pecom(data):
     results = []
-    # Работаем через cargos, как в твоем исходнике
     for i in data.get("cargos", []):
         c = i.get("cargo", {})
         info = i.get("info", {})
@@ -363,11 +377,14 @@ def parse_pecom(data):
         service_items = services.get("items", [])
 
         # 1. РАСЧЕТ СУММЫ (total_price)
-        # Суммируем все услуги из service_items для аналитики
-        total_sum = sum(float(s.get("sum", 0)) for s in service_items)
-        total_debt = float(services.get("debt", 0))
+        # Сначала берем готовое поле 'sum', если его нет - считаем по списку услуг
+        total_sum = float(services.get("sum") or 0)
 
-        # 2. ТВОЯ ЛОГИКА СТАТУСА ОПЛАТЫ
+        if total_sum <= 0:
+            total_sum = sum(float(s.get("price") or s.get("sum") or 0) for s in service_items)
+
+        # 2. ДОЛГ И СТАТУС ОПЛАТЫ
+        total_debt = float(services.get("debt", 0))
         has_unpaid_service = any(s.get("payToReceive") is True for s in service_items)
 
         if total_debt <= 0 and not has_unpaid_service:
@@ -375,7 +392,8 @@ def parse_pecom(data):
         else:
             payment_status = f"К ОПЛАТЕ: {total_debt}"
 
-        # 3. ТВОЯ ЛОГИКА PAYER_TYPE
+        # 3. PAYER_TYPE (Кто платит)
+        # В твоем JSON у всех услуг payerType: 1 (это отправитель)
         p_types = [s.get("payerType") for s in service_items]
         if all(pt == 2 for pt in p_types):
             payer_type = "recipient"
@@ -384,7 +402,7 @@ def parse_pecom(data):
         else:
             payer_type = "third_party"
 
-        # 4. ЧИСТИМ ДАТУ (YYYY-MM-DD)
+        # 4. ЧИСТИМ ДАТУ
         arrival_raw = info.get("arrivalPlanDateTime") or "САМОВЫВОЗ"
         arrival = str(arrival_raw)[:10]
 
@@ -398,8 +416,8 @@ def parse_pecom(data):
             "params": f"{int(c.get('amount', 0))}М | {c.get('weight', 0)}КГ | {c.get('volume', 0)}М3",
             "arrival": arrival,
             "payment": payment_status.upper(),
-            "total_price": round(total_sum, 2), # Чистое число для анализа
-            "is_manual": False,                # Обязательное поле
+            "total_price": round(total_sum, 2),
+            "is_manual": False,
             "route": f"{clean_name(i.get('sender', {}).get('branch'), True)} -> {clean_name(i.get('receiver', {}).get('branch', {}).get('city'), True)}"
         })
     return results

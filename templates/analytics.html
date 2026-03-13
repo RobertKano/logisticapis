@@ -6,85 +6,71 @@
     <title>Аналитика логистики | Dashboard</title>
     <link href="https://cdn.jsdelivr.net" rel="stylesheet">
     <style>
-        :root {
-            --bg-body: #f4f7f6;
-            --card-bg: #ffffff;
-            --text-main: #1c2434;
-            --text-muted: #8a99af;
-            --accent: #3c50e0;
-            --danger: #ef4444;
-            --success: #10b981;
-        }
+    :root {
+        --bg-body: #f4f7f6;
+        --card-bg: #ffffff;
+        --text-main: #1c2434;
+        --text-muted: #8a99af;
+        --accent: #3c50e0;
+        --danger: #ef4444;
+        --success: #10b981;
+        --border-light: #f1f5f9;
+    }
 
-        body {
-            background-color: var(--bg-body);
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            color: var(--text-main);
-            padding: 30px;
-        }
+    body {
+        background-color: var(--bg-body);
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        color: var(--text-main);
+        padding: 30px;
+    }
 
-        .header-section { margin-bottom: 25px; }
+    /* Карточки сводки */
+    .stats-wrapper { display: flex; gap: 15px; margin-bottom: 30px; }
+    .stat-card {
+        background: var(--card-bg);
+        border-radius: 12px;
+        padding: 20px;
+        flex: 1;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+        border-bottom: 4px solid transparent;
+    }
+    .stat-card.danger { border-color: var(--danger); }
+    .stat-label { color: var(--text-muted); font-size: 0.7rem; font-weight: 800; text-transform: uppercase; margin-bottom: 8px; display: block; }
+    .stat-value { font-size: 1.6rem; font-weight: 800; }
 
-        /* ПРИНУДИТЕЛЬНЫЙ ГОРИЗОНТАЛЬНЫЙ РЯД КАРТОЧЕК */
-        .stats-wrapper {
-            display: flex;
-            flex-direction: row;
-            flex-wrap: nowrap; /* Запрет переноса на десктопе */
-            gap: 15px;
-            margin-bottom: 30px;
-        }
+    /* Таблица */
+    .table-container { background: var(--card-bg); border-radius: 12px; padding: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.04); }
+    .table thead th {
+        border: none;
+        background: #f8fafc;
+        color: var(--text-muted);
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        padding: 15px 10px;
+        text-align: center;
+    }
+    .table td { padding: 15px 10px; border-bottom: 1px solid var(--border-light); vertical-align: middle; }
 
-        .stat-card {
-            background: var(--card-bg);
-            border-radius: 12px;
-            padding: 20px;
-            flex: 1; /* Одинаковая ширина */
-            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
-            min-width: 200px;
-            border-bottom: 4px solid transparent;
-        }
+    /* Элементы внутри ячеек */
+    .tk-name { font-weight: 700; color: var(--accent); font-size: 0.95rem; }
+    .price-tag { font-weight: 800; font-size: 0.9rem; }
+    .price-kg { color: var(--success); }
+    .price-m3 { color: var(--accent); }
 
-        .stat-card.danger { border-color: var(--danger); }
+    .avg-badge {
+        display: inline-block;
+        background: #f1f5f9;
+        color: #475569;
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 0.8rem;
+        font-weight: 700;
+        margin: 6px 0;
+        border: 1px solid #e2e8f0;
+    }
 
-        .stat-label {
-            color: var(--text-muted);
-            font-size: 0.75rem;
-            font-weight: 800;
-            text-transform: uppercase;
-            margin-bottom: 8px;
-            display: block;
-        }
-
-        .stat-value { font-size: 1.7rem; font-weight: 800; }
-        .stat-unit { font-size: 0.85rem; color: var(--text-muted); margin-left: 5px; font-weight: 400; }
-
-        /* ТАБЛИЦА */
-        .table-container {
-            background: var(--card-bg);
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
-        }
-
-        .table thead th {
-            border: none;
-            background: #f8fafc;
-            color: var(--text-muted);
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            padding: 15px;
-        }
-
-        .table td { padding: 15px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
-
-        .tk-name { font-weight: 700; color: var(--accent); }
-        .efficiency-val { font-weight: 700; color: var(--success); }
-        .no-data { color: #cbd5e1; font-style: italic; font-size: 0.8rem; }
-
-        @media (max-width: 768px) {
-            .stats-wrapper { flex-wrap: wrap; }
-            .stat-card { flex: 1 1 45%; }
-        }
+    .meta-info { font-size: 0.65rem; color: var(--text-muted); line-height: 1.3; }
+    .meta-info b { color: #475569; }
     </style>
 </head>
 <body>
@@ -92,15 +78,15 @@
 <div class="container-fluid" style="max-width: 1400px;">
 
     <!-- HEADER -->
-    <div class="header-section d-flex justify-content-between align-items-end">
-        <div>
-            <h2 class="fw-bold m-0">📈 Аналитика логистики</h2>
-            <div class="text-muted small">Данные за последние 30 дней</div>
-        </div>
-        <div class="d-flex gap-2">
-            <a href="/" class="btn btn-sm btn-outline-secondary" style="border-radius: 8px;">⬅️ К списку грузов</a>
-        </div>
-    </div>
+    <div class="d-flex gap-2">
+    <select id="period-select" class="form-select form-select-sm" style="width: 150px; border-radius: 8px;" onchange="loadAnalytics(this.value)">
+        <option value="7">За неделю</option>
+        <option value="30" selected>За 30 дней</option>
+        <option value="90">За квартал</option>
+        <option value="365">За год</option>
+    </select>
+    <a href="/" class="btn btn-sm btn-outline-secondary" style="border-radius: 8px;">⬅️ К списку грузов</a>
+</div>
 
     <!-- СВОДНЫЕ ПОКАЗАТЕЛИ (В ОДИН РЯД) -->
     <div class="stats-wrapper">
@@ -141,17 +127,16 @@
             <table class="table">
                 <thead>
                     <tr>
-                        <th>Перевозчик</th>
-                        <th class="text-center">Срок (дн)</th>
-                        <th class="text-end">Объемный вес</th>
-                        <th class="text-end">Вес к оплате</th>
-                        <th class="text-end">Стоимость за кг</th>
-                        <th class="text-end">Стоимость за п.</th>
+                        <th style="width: 200px;">Перевозчик</th>
+                        <th class="text-center">📦 Малые <br><small>(до 30кг)</small></th>
+                        <th class="text-center">📦 Средние <br><small>(30-150кг)</small></th>
+                        <th class="text-center">🚚 Крупные <br><small>(150-1т)</small></th>
+                        <th class="text-center">🚜 Тонники <br><small>(от 1т)</small></th>
                         <th class="text-end">Итого (₽)</th>
                     </tr>
                 </thead>
                 <tbody id="tk-stats-body">
-                    <!-- Заполняется через JavaScript -->
+                    <!-- Заполнится через JS -->
                 </tbody>
             </table>
         </div>
@@ -159,50 +144,139 @@
 </div>
 
 <script>
-async function loadAnalytics() {
+async function loadAnalytics(days = 30) {
     try {
-        // 1. Общая сводка
-        const resSum = await fetch('/api/analytics');
+        console.log(`🚀 Анализ за ${days} дн. (с почетом 1-го и 2-го места)`);
+
+        // 1. ВЕРХНИЕ КАРТОЧКИ (СВОДКА)
+        const resSum = await fetch(`/api/analytics?days=${days}`);
         const dataSum = await resSum.json();
-        if (dataSum.status === 'ok') {
+        if (dataSum.status === 'ok' && dataSum.summary) {
             const s = dataSum.summary;
-            document.getElementById('stat-places').innerText = s.total_places || 0;
-            document.getElementById('stat-weight').innerText = (s.total_weight || 0).toLocaleString('ru-RU');
-            document.getElementById('stat-volume').innerText = (s.total_volume || 0).toLocaleString('ru-RU');
-            document.getElementById('stat-unpaid').innerText = (s.total_unpaid || 0).toLocaleString('ru-RU');
+            const setVal = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) el.innerText = (val || 0).toLocaleString('ru-RU');
+            };
+            setVal('stat-places', s.total_places);
+            setVal('stat-weight', s.total_weight);
+            setVal('stat-volume', s.total_volume);
+            setVal('stat-unpaid', s.total_unpaid);
         }
 
-        // 2. Сравнение ТК за 30 дней
-        const resTk = await fetch('/api/analytics/tk-compare');
+        // 2. ДАННЫЕ ТАБЛИЦЫ
+        const resTk = await fetch(`/api/analytics/tk-compare?days=${days}`);
         const dataTk = await resTk.json();
-        const tbody = document.getElementById('tk-stats-body');
-        tbody.innerHTML = '';
 
+        // --- УМНЫЙ ПОИСК ЛИДЕРОВ (ЗОЛОТО И СЕРЕБРО) ---
+        const categoryStats = {};
         dataTk.forEach(item => {
-            const tr = document.createElement('tr');
+            if (!categoryStats[item.category]) categoryStats[item.category] = [];
 
-            // Проверка на наличие данных для корректного вывода
-            const costKg = item.cost_per_kg > 0 ? `${item.cost_per_kg} ₽` : '—';
-            const costPlace = item.cost_per_place > 0 ? `${item.cost_per_place} ₽` : '—';
+            // ПРАВИЛО: Для мелочи сравниваем ЧЕК, для остальных - ТАРИФ КГ
+            const val = item.category.includes('Малые')
+                ? (item.total_spent / item.total_shipments)
+                : item.cost_per_kg;
 
-            tr.innerHTML = `
-                <td><span class="tk-name">${item.tk}</span></td>
-                <td class="text-center text-muted">${item.avg_days || 0}</td>
-                <td class="text-end">${item.volume_weight.toLocaleString()} кг</td>
-                <td class="text-end fw-bold">${item.pay_weight.toLocaleString()} кг</td>
-                <td class="text-end efficiency-val">${costKg}</td>
-                <td class="text-end text-indigo">${costPlace}</td>
-                <td class="text-end fw-bold">${item.total_spent.toLocaleString()} ₽</td>
-            `;
-            tbody.appendChild(tr);
+            categoryStats[item.category].push({ tk: item.tk, val: val });
         });
 
+        // Сортируем и выявляем 1-е и 2-е место в каждой категории
+        const winners = {};
+        for (let cat in categoryStats) {
+            categoryStats[cat].sort((a, b) => a.val - b.val);
+            winners[cat] = {
+                gold: categoryStats[cat][0]?.val,   // Абсолютный минимум
+                silver: categoryStats[cat][1]?.val  // Второй результат
+            };
+        }
+
+        // Группировка по ТК для отрисовки строк
+        const grouped = dataTk.reduce((acc, item) => {
+            if (!acc[item.tk]) acc[item.tk] = { total: 0 };
+            acc[item.tk][item.category] = item;
+            acc[item.tk].total += item.total_spent;
+            return acc;
+        }, {});
+
+        const tbody = document.getElementById('tk-stats-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        const categories = [
+            '📦 Малые (до 30кг)',
+            '📦 Средние (30-150кг)',
+            '🚚 Крупные (150-1т)',
+            '🚜 Тонники (свыше 1т)'
+        ];
+
+        for (const tkName in grouped) {
+            const tkData = grouped[tkName];
+            const tr = document.createElement('tr');
+            let rowHtml = `<td><span class="tk-name" style="font-weight:700; color:#3c50e0;">${tkName}</span></td>`;
+
+            categories.forEach(cat => {
+                const stats = tkData[cat];
+                if (stats) {
+                    const avgCheck = Math.round(stats.total_spent / stats.total_shipments);
+                    const currentVal = cat.includes('Малые') ? (stats.total_spent / stats.total_shipments) : stats.cost_per_kg;
+
+                    // Определение стиля ячейки (Золото / Серебро)
+                    let bgStyle = 'border-right: 1px solid #f1f5f9;';
+                    let badge = '';
+
+                    if (currentVal === winners[cat].gold) {
+                        bgStyle = 'background-color: #f0fff4; border: 2px solid #c6f6d5;'; // Зеленый (Золото)
+                        badge = '<div style="font-size:0.6rem; color:#2f855a; font-weight:800; margin-bottom:4px;">🏆 ЛУЧШАЯ ЦЕНА</div>';
+                    } else if (currentVal === winners[cat].silver) {
+                        bgStyle = 'background-color: #f0f9ff; border: 1px dashed #bee3f8;'; // Голубой (Серебро)
+                        badge = '<div style="font-size:0.6rem; color:#2b6cb0; font-weight:800; margin-bottom:4px;">🥈 ВЫГОДНЫЙ ТАРИФ</div>';
+                    }
+
+                    rowHtml += `
+                        <td class="text-center" style="${bgStyle} padding: 15px 5px !important; transition: all 0.3s;">
+                            ${badge}
+
+                            <div style="margin-bottom: 8px; line-height: 1.2;">
+                                <div style="font-size: 0.65rem; color: #8a99af; text-transform: uppercase;">Тарифы:</div>
+                                <span style="color:#10b981; font-weight:800; font-size: 0.9rem;">${stats.cost_per_kg}<small> ₽/кг</small></span>
+                                <span style="opacity:0.2; margin: 0 4px;">|</span>
+                                <span style="color:#3c50e0; font-weight:800; font-size: 0.9rem;">${Math.round(stats.cost_per_m3 || 0).toLocaleString()}<small> ₽/м³</small></span>
+                            </div>
+
+                            <div style="font-size: 0.65rem; color: #8a99af; text-transform: uppercase;">Средний чек:</div>
+                            <div style="background:#f1f5f9; color:#475569; padding:4px 10px; border-radius:6px; font-weight:800; display:inline-block; font-size:0.9rem; margin-bottom:8px; border: 1px solid #e2e8f0;">
+                                ${avgCheck.toLocaleString()} ₽ <small style="font-weight:400; opacity:0.6">/гр.</small>
+                            </div>
+
+                            <div style="font-size:0.7rem; color:#8a99af; border-top: 1px solid rgba(0,0,0,0.05); pt-2; margin-top: 5px;">
+                                <div style="margin-top: 5px;">Всего: <b style="color: #1c2434;">${Math.round(stats.total_spent).toLocaleString()} ₽</b></div>
+                                <div style="margin-top: 2px;">Выборка: <b style="color: #3c50e0;">${stats.total_shipments}</b> грузов</div>
+                            </div>
+                        </td>`;
+                } else {
+                    rowHtml += `<td class="text-center" style="opacity: 0.15; background: #fafafa; vertical-align: middle;">— данных нет —</td>`;
+                }
+            });
+
+            // Итоговая колонка
+            rowHtml += `<td class="text-end fw-bold" style="color: #1c2434; font-size:1.1rem; vertical-align: middle;">
+                            ${Math.round(tkData.total).toLocaleString('ru-RU')} ₽
+                        </td>`;
+
+            tr.innerHTML = rowHtml;
+            tbody.appendChild(tr);
+        }
+        console.log("✅ Матрица лидеров отрисована!");
+
     } catch (e) {
-        console.error("Ошибка загрузки данных:", e);
+        console.error("❌ Ошибка:", e);
     }
 }
 
-document.addEventListener('DOMContentLoaded', loadAnalytics);
+
+// Стартовый запуск
+document.addEventListener('DOMContentLoaded', () => loadAnalytics(30));
+
 </script>
 
 </body>

@@ -110,8 +110,6 @@ function renderTable() {
         return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
     });
 
-
-
     // 2. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
     const shortenMyName = (name) => {
         if (!name) return '—';
@@ -127,73 +125,45 @@ function renderTable() {
     // 3. ОТРИСОВКА СТРОК
     list.forEach(r => {
         const tr = document.createElement('tr');
-        const rawStatus = (r.status || '').toLowerCase();
-        let displayStatus = r.status || (currentView === 'archive' ? 'Завершен' : '—');
+
+        // 1. ЧИСТКА (Добавил вывод в консоль для теста)
+        let s = (r.status || "").toLowerCase()
+            .replace(/!/g, '')
+            .replace(/\(\d+%\)/g, '')
+            .replace(/\(не в api\)/g, '')
+            .trim();
+
+        // ДЕБАГ: Раскомментируй строку ниже, чтобы увидеть в консоли браузера, что происходит
+        if (r.id === '2601191073819') console.log(`ID: ${r.id} | Clean: "${s}"`);
+
+        let displayStatus = r.status; // Истинный статус из API
         let statusClass = "text-dark";
+        let icon = "❓ "; // Дефолтная иконка для теста, если ни одно условие не сработало
 
-        // Суммируем стоимость для счетчика
-        totalSum += parseFloat(r.total_price || 0);
+        // 2. ПРОВЕРКА ПО КАТЕГОРИЯМ
+        const isArrived = ["прибыл", "готов", "хранение", "разгружается", "склад получатель", "пункт назначения", "аэропорт"].some(word => s.includes(word));
+        const isDelivery = ["оставк", "адресная", "до адреса", "до склада", "экспедирование", "готовится к доставке", "доставляется"].some(word => s.includes(word));
+        const isWaiting = ["черновик", "обработке", "забор", "ожидается", "оформлен", "заявка", "модерации", "принят на склад", "отправки", "аннулировано", "принят"].some(word => s.includes(word));
+        const isInTransit = ["пути", "транзит", "принят к перевозке", "отправлен"].some(word => s.includes(word));
 
-        // --- МАППИНГ СТАТУСОВ (С ЗАЩИТОЙ ПРОГНОЗА БСД) ---
-                // --- МАППИНГ СТАТУСОВ (БЕЗ ДУБЛЕЙ ИКОНОК) ---
-        const isWaiting = rawStatus.includes('прогноз') || rawStatus.includes('подготовка') || rawStatus.includes('ожидает') || rawStatus.includes('отправка');
-
-        let icon = "";
-
-        // if (isWaiting) {
-        //     icon = "🚚 ";
-        //     displayStatus = r.status; // ПОДГОТОВКА К ОТПРАВКЕ...
-        //     statusClass = "text-primary";
-        //     tr.classList.remove('row-arrived');
-        // }
-        // else if (rawStatus.includes('прибыл') || rawStatus.includes('готов') || rawStatus.includes('хранение')) {
-        //     icon = "✅ ";
-        //     displayStatus = "Прибыл в ТК";
-        //     statusClass = "text-success";
-        //     tr.classList.add('row-arrived');
-        // }
-        // else if (rawStatus.includes('пути') || rawStatus.includes('транзит') || rawStatus.includes('принят')){
-        //     icon = "🚚 ";
-        //     displayStatus = "В пути";
-        //     statusClass = "text-primary";
-        // }
-        // else if (rawStatus.includes('оставк') || rawStatus.includes('до адреса')){
-        //     icon = "🚚 ";
-        //     displayStatus = "Доставка ТК ➡️ СКЛАД";
-        //     statusClass = "text-success";
-        //     tr.classList.add('row-arrived');
-        // }ПРИБЫЛ В ГОРОД НАЗНАЧЕНИЯ
-        // 1. САМЫЙ ВЫСОКИЙ ПРИОРИТЕТ - ДОСТАВКА (чтобы не перекрывалось "прибытием")
-        if (rawStatus.includes('оставк') || rawStatus.includes('до адреса') || rawStatus.includes('прибыл в город назначения'))  {
-            icon = "🚚 ";
-            displayStatus = "Доставка ТК ➡️ СКЛАД";
-            statusClass = "text-success";
-            tr.classList.add('row-arrived');
-        }
-        // 2. ПОДГОТОВКА (isWaiting)
-        else if (isWaiting) {
-            icon = "🚚 ";
-            displayStatus = r.status;
-            statusClass = "text-primary";
-            tr.classList.remove('row-arrived');
-        }
-        // 3. ПРИБЫЛ (Самовывоз)
-        else if (rawStatus.includes('прибыл') || rawStatus.includes('готов') || rawStatus.includes('хранение')) {
+        // 3. ЖЕСТКИЙ МАППИНГ (С ПРОВЕРКОЙ ВЫВОДА)
+        if (isArrived) {
             icon = "✅ ";
-            displayStatus = "Прибыл в ТК";
             statusClass = "text-success";
             tr.classList.add('row-arrived');
         }
-        // 4. В ПУТИ
-        else if (rawStatus.includes('пути') || rawStatus.includes('транзит') || rawStatus.includes('принят')) {
+        else if (isDelivery) {
             icon = "🚚 ";
-            displayStatus = "В пути";
+            statusClass = "text-success";
+            tr.classList.add('row-arrived');
+        }
+        else if (isWaiting || isInTransit) {
+            icon = "🚚 ";
             statusClass = "text-primary";
         }
 
-        // Собираем итоговую строку статуса с ОДНОЙ иконкой
+        // ВЫВОДИМ ИСТИННЫЙ СТАТУС ДЛЯ ТЕСТА
         const finalStatusHtml = `<span class="${statusClass}">${icon}${displayStatus}</span>`;
-
 
         // --- ЛОГИКА ОПЛАТЫ ---
         const pRaw = (r.payment || "").toLowerCase();
@@ -239,7 +209,6 @@ function renderTable() {
         // --- ДАТЫ ---
         const rawDate = r.arrival ? r.arrival.split('T')[0] : (r.archived_at ? (r.archived_at.includes('.') ? r.archived_at.split('.').reverse().join('-') : r.archived_at) : '0000-00-00');
         const displayDate = r.arrival ? r.arrival.split('T')[0] : (r.archived_at || '—');
-
         tr.setAttribute('data-sender', (r.sender || "").toLowerCase());
         tr.setAttribute('data-receiver', (r.recipient || "").toLowerCase());
 

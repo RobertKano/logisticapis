@@ -88,7 +88,8 @@ class CargoDB:
         return places, weight, volume
 
     def upsert_cargo(self, item, is_archived=0):
-        """Обновляет updated_at ТОЛЬКО при смене статуса"""
+        """Обновляет данные, сохраняя статус архивации и параметры"""
+        # 1. Парсим параметры из строки "1М | 10КГ | 0.5М3"
         p_val, w_val, v_val = self._parse_params(item.get('params', ''))
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
@@ -109,13 +110,37 @@ class CargoDB:
                     arrival=excluded.arrival,
                     payment=excluded.payment,
                     total_price=excluded.total_price,
+
+                    -- ОБНОВЛЯЕМ ПАРАМЕТРЫ (чтобы не были 0)
                     places=excluded.places,
                     weight=excluded.weight,
                     volume=excluded.volume,
-                    is_archived=excluded.is_archived,
-                    created_at=COALESCE(cargo.created_at, excluded.created_at),
 
-                    -- ВАЖНО: Обновляем время только если статус ИЗМЕНИЛСЯ
+                    -- ОБНОВЛЯЕМ ТЕКСТ СТАТУСА (51% -> 98%)
+                    status = excluded.status,
+
+                    -- ЛОГИКА АРХИВАЦИИ:
+                    -- Если пришел флаг архивации (is_archived=1) ИЛИ статус содержит ключевые слова
+                    is_archived = CASE
+                        WHEN excluded.is_archived = 1
+                             OR UPPER(excluded.status) LIKE '%ВЫДАН%'
+                             OR UPPER(excluded.status) LIKE '%АРХИВ%'
+                        THEN 1
+                        ELSE 0
+                    END,
+
+                    -- УПРАВЛЕНИЕ ДАТОЙ АРХИВАЦИИ
+                    archived_at = CASE
+                        WHEN excluded.is_archived = 1
+                             OR UPPER(excluded.status) LIKE '%ВЫДАН%'
+                             OR UPPER(excluded.status) LIKE '%АРХИВ%'
+                        THEN COALESCE(cargo.archived_at, CURRENT_TIMESTAMP)
+                        ELSE NULL
+                    END,
+
+                    created_at = COALESCE(cargo.created_at, excluded.created_at),
+
+                    -- ТАЙМЕР ОБНОВЛЕНИЯ (только при реальной смене текста статуса)
                     updated_at = CASE
                         WHEN cargo.status = excluded.status THEN cargo.updated_at
                         ELSE excluded.updated_at
