@@ -1,6 +1,7 @@
 import os
 import sys
 
+import numpy as np
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -121,42 +122,91 @@ def api_analytics():
 
 @app.route('/api/analytics/tk-compare')
 def api_tk_compare():
-    # КЛЮЧЕВАЯ ПРАВКА: получаем количество дней из URL, по умолчанию 30
     days = request.args.get('days', 30)
     try:
         conn = db.get_connection()
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
+        # 1. Тянем сырые данные для точного расчета
         cursor.execute(f"""
             SELECT
                 tk,
                 CASE
-                    WHEN weight <= 30 THEN '📦 Малые (до 30кг)'
-                    WHEN weight > 30 AND weight <= 150 THEN '📦 Средние (30-150кг)'
-                    WHEN weight > 150 AND weight <= 1000 THEN '🚚 Крупные (150-1т)'
+                    WHEN weight <= 15 THEN '📦 Ультра-малые (до 15кг)'
+                    WHEN weight > 15 AND weight <= 35 THEN '📦 Малые (15-35кг)'
+                    WHEN weight > 35 AND weight <= 75 THEN '📦 Средние (35-75кг)'
+                    WHEN weight > 75 AND weight <= 150 THEN '📦 Премиум (75-150кг)'
+                    WHEN weight > 150 AND weight <= 400 THEN '🚚 Крупные (150-400кг)'
+                    WHEN weight > 400 AND weight <= 1000 THEN '🚚 Тяжелые (400кг-1т)'
                     ELSE '🚜 Тонники (свыше 1т)'
                 END as category,
-                COUNT(id) as total_shipments,
-
-                -- ФИКС СРОКОВ: считаем реальные дни (от создания до сегодня/архива)
-                ROUND(AVG(ABS(JULIANDAY(COALESCE(archived_at, date('now'))) - JULIANDAY(created_at))), 1) as avg_days,
-
-                ROUND(SUM(CASE WHEN weight > (volume * 250) THEN weight ELSE (volume * 250) END), 0) as pay_weight,
-                ROUND(SUM(total_price) / NULLIF(SUM(CASE WHEN weight > (volume * 250) THEN weight ELSE (volume * 250) END), 0), 2) as cost_per_kg,
-                ROUND(SUM(total_price) / NULLIF(SUM(volume), 0), 0) as cost_per_m3,
-                ROUND(SUM(total_price), 2) as total_spent
+                total_price,
+                weight,
+                volume,
+                places,
+                ABS(JULIANDAY(COALESCE(archived_at, date('now'))) - JULIANDAY(created_at)) as days_diff
             FROM cargo
             WHERE updated_at >= date('now', '-{days} days')
               AND (sender LIKE '%ЮЖНЫЙ ФОРПОСТ%' OR recipient LIKE '%ЮЖНЫЙ ФОРПОСТ%')
-              AND weight > 0 AND total_price > 0
-            GROUP BY tk, category
-            ORDER BY tk ASC, weight ASC
+
+              -- ВОТ ЭТА СТРОКА ОТСЕКАЕТ АНОМАЛИИ (Грузы тяжелее 5 тонн):
+              AND weight > 0 AND weight < 5000
+
+              AND total_price > 0
         """)
-        stats = [dict(row) for row in cursor.fetchall()]
-        return jsonify(stats)
+
+        raw_rows = [dict(row) for row in cursor.fetchall()]
+
+        # 2. Группируем данные в Python
+        stats_map = {}
+        for r in raw_rows:
+            key = (r['tk'], r['category'])
+            if key not in stats_map:
+                stats_map[key] = {
+                    'prices_kg': [], 'days': [],
+                    'total_spent': 0, 'total_weight': 0,
+                    'total_vol': 0, 'total_places': 0
+                }
+
+            stats_map[key]['prices_kg'].append(r['total_price'] / r['weight'])
+            stats_map[key]['days'].append(r['days_diff'])
+            stats_map[key]['total_spent'] += r['total_price']
+            stats_map[key]['total_weight'] += r['weight']
+            stats_map[key]['total_vol'] += r['volume']
+            stats_map[key]['total_places'] += r['places']
+
+        final_stats = []
+        for (tk, cat), data in stats_map.items():
+            # Работаем через NumPy для квантилей
+            prices = np.array(data['prices_kg'])
+
+            # Расчет квантилей (25, 50, 75)
+            q25 = np.percentile(prices, 25)
+            q50 = np.median(prices)  # МЕДИАНА (Типичный тариф)
+            q75 = np.percentile(prices, 75)
+
+            efficiency_score = data['total_weight'] / data['total_spent'] if data['total_spent'] > 0 else 0
+
+            final_stats.append({
+                "tk": tk,
+                "category": cat,
+                "total_shipments": len(prices),
+                "avg_days": round(np.mean(data['days']), 1),
+                "cost_per_kg": round(q50, 2),  # Основная цифра в таблице
+                "q25_kg": round(q25, 2),       # Минимум "нормы"
+                "q75_kg": round(q75, 2),       # Максимум "нормы"
+                "cost_per_m3": round(data['total_spent'] / data['total_vol'], 0) if data['total_vol'] > 0 else 0,
+                "sum_places": data['total_places'],
+                "sum_weight": round(data['total_weight'], 1),
+                "sum_volume": round(data['total_vol'], 2),
+                "total_spent": round(data['total_spent'], 2),
+                "efficiency_index": round(efficiency_score, 4)
+            })
+
+        return jsonify(final_stats)
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ [Analytics Error]: {e}")
         return jsonify({"error": str(e)}), 500
     finally:
         conn.close()

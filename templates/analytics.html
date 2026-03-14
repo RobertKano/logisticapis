@@ -89,7 +89,7 @@
 </div>
 
     <!-- СВОДНЫЕ ПОКАЗАТЕЛИ (В ОДИН РЯД) -->
-    <div class="stats-wrapper">
+<!--     <div class="stats-wrapper">
         <div class="stat-card">
             <span class="stat-label">📦 МЕСТ В ПУТИ</span>
             <div class="stat-value" id="stat-places">0</div>
@@ -116,25 +116,41 @@
             </div>
         </div>
     </div>
-
+ -->
     <!-- ТАБЛИЦА ЭФФЕКТИВНОСТИ -->
     <div class="table-container">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h5 class="fw-bold m-0">Сравнение эффективности перевозчиков</h5>
         </div>
 
+        <!-- ИНФО-ЛЕГЕНДА -->
+        <div class="alert alert-light border-0 shadow-sm mb-4" style="border-radius: 12px; background: #fff;">
+            <div class="d-flex align-items-start gap-3">
+                <div style="font-size: 1.5rem;">ℹ️</div>
+                <div class="small text-muted">
+                    <b class="text-dark">Как читается эта таблица:</b><br>
+                    • <b>Фильтр аномалий:</b> В расчетах <span class="badge bg-warning text-dark">не учитываются</span> разовые сверхкрупные грузы <b>более 5 тонн</b> (чтобы не искажать средние тарифы).<br>
+                    • <b>Медиана (кг):</b> Типичная цена перевозки. В отличие от "средней", она игнорирует случайные сверхдорогие или дешевые накладные.<br>
+                    • <b>Рейтинг КПД:</b> Место в списке (🥇, 🥈) зависит от <b>эффективности</b> — сколько кг и кубов перевозчик везет на каждый 1 рубль во всех категориях.
+                </div>
+            </div>
+        </div>
+
         <div class="table-responsive">
             <table class="table">
-                <thead>
-                    <tr>
-                        <th style="width: 200px;">Перевозчик</th>
-                        <th class="text-center">📦 Малые <br><small>(до 30кг)</small></th>
-                        <th class="text-center">📦 Средние <br><small>(30-150кг)</small></th>
-                        <th class="text-center">🚚 Крупные <br><small>(150-1т)</small></th>
-                        <th class="text-center">🚜 Тонники <br><small>(от 1т)</small></th>
-                        <th class="text-end">Итого (₽)</th>
-                    </tr>
-                </thead>
+            <thead>
+                <tr>
+                    <th style="width: 180px;">Перевозчик</th>
+                    <th class="text-center">📦 Ультра-малые <br><small>(до 15кг)</small></th>
+                    <th class="text-center">📦 Малые <br><small>(15-35кг)</small></th>
+                    <th class="text-center">📦 Средние <br><small>(35-75кг)</small></th>
+                    <th class="text-center">📦 Ср. Плюс <br><small>(75-150кг)</small></th>
+                    <th class="text-center">🚚 Крупные <br><small>(150-400кг)</small></th>
+                    <th class="text-center">🚚 Тяжелые <br><small>(400кг-1т)</small></th>
+                    <th class="text-center">🚜 Тонники <br><small>(от 1т)</small></th>
+                    <th class="text-end">Итого (₽)</th>
+                </tr>
+            </thead>
                 <tbody id="tk-stats-body">
                     <!-- Заполнится через JS -->
                 </tbody>
@@ -146,9 +162,9 @@
 <script>
 async function loadAnalytics(days = 30) {
     try {
-        console.log(`🚀 Анализ за ${days} дн. (с почетом 1-го и 2-го места)`);
+        console.log(`🚀 Честный анализ за ${days} дн. (Без аномалий > 5т)`);
 
-        // 1. ВЕРХНИЕ КАРТОЧКИ (СВОДКА)
+        // 1. СВОДКА (Карточки)
         const resSum = await fetch(`/api/analytics?days=${days}`);
         const dataSum = await resSum.json();
         if (dataSum.status === 'ok' && dataSum.summary) {
@@ -167,111 +183,147 @@ async function loadAnalytics(days = 30) {
         const resTk = await fetch(`/api/analytics/tk-compare?days=${days}`);
         const dataTk = await resTk.json();
 
-        // --- УМНЫЙ ПОИСК ЛИДЕРОВ (ЗОЛОТО И СЕРЕБРО) ---
-        const categoryStats = {};
+        // Поиск рекордов в каждой категории (для 🏆 и 💎)
+        const winners = {};
         dataTk.forEach(item => {
-            if (!categoryStats[item.category]) categoryStats[item.category] = [];
-
-            // ПРАВИЛО: Для мелочи сравниваем ЧЕК, для остальных - ТАРИФ КГ
-            const val = item.category.includes('Малые')
-                ? (item.total_spent / item.total_shipments)
-                : item.cost_per_kg;
-
-            categoryStats[item.category].push({ tk: item.tk, val: val });
+            if (!winners[item.category]) winners[item.category] = { minKg: Infinity, minCheck: Infinity };
+            const currentCheck = item.total_spent / item.total_shipments;
+            if (item.cost_per_kg < winners[item.category].minKg) winners[item.category].minKg = item.cost_per_kg;
+            if (currentCheck < winners[item.category].minCheck) winners[item.category].minCheck = currentCheck;
         });
 
-        // Сортируем и выявляем 1-е и 2-е место в каждой категории
-        const winners = {};
-        for (let cat in categoryStats) {
-            categoryStats[cat].sort((a, b) => a.val - b.val);
-            winners[cat] = {
-                gold: categoryStats[cat][0]?.val,   // Абсолютный минимум
-                silver: categoryStats[cat][1]?.val  // Второй результат
-            };
-        }
-
-        // Группировка по ТК для отрисовки строк
+        // Группировка данных
         const grouped = dataTk.reduce((acc, item) => {
-            if (!acc[item.tk]) acc[item.tk] = { total: 0 };
+            if (!acc[item.tk]) acc[item.tk] = { total: 0, total_w: 0, total_v: 0, total_p: 0 };
             acc[item.tk][item.category] = item;
             acc[item.tk].total += item.total_spent;
+            acc[item.tk].total_w += item.sum_weight;
+            acc[item.tk].total_v += item.sum_volume;
+            acc[item.tk].total_p += item.sum_places;
             return acc;
         }, {});
+
+        const categories = [
+            '📦 Ультра-малые (до 15кг)', '📦 Малые (15-35кг)', '📦 Средние (35-75кг)',
+            '📦 Премиум (75-150кг)', '🚚 Крупные (150-400кг)', '🚚 Тяжелые (400кг-1т)', '🚜 Тонники (свыше 1т)'
+        ];
+
+        // --- ЧЕСТНЫЙ РЕЙТИНГ: СРЕДНЕЕ ПО ВСЕМ КАТЕГОРИЯМ ---
+        const tkRank = [];
+        for (const name in grouped) {
+            const d = grouped[name];
+            let catScores = [];
+
+            categories.forEach(cat => {
+                const s = d[cat];
+                if (s && s.total_spent > 0) {
+                    // Эффективность категории: (Вес + Объем*250) на 1 рубль
+                    const score = (s.sum_weight + (s.sum_volume * 250)) / s.total_spent;
+                    catScores.push(score);
+                }
+            });
+
+            // Рейтинг ТК — это средний балл по всем её активным категориям
+            const finalScore = catScores.length > 0 ? (catScores.reduce((a, b) => a + b, 0) / catScores.length) : 0;
+            tkRank.push({ name, score: finalScore, data: d });
+        }
+        tkRank.sort((a, b) => b.score - a.score);
 
         const tbody = document.getElementById('tk-stats-body');
         if (!tbody) return;
         tbody.innerHTML = '';
 
-        const categories = [
-            '📦 Малые (до 30кг)',
-            '📦 Средние (30-150кг)',
-            '🚚 Крупные (150-1т)',
-            '🚜 Тонники (свыше 1т)'
-        ];
-
-        for (const tkName in grouped) {
-            const tkData = grouped[tkName];
+        tkRank.forEach((tk, index) => {
+            const tkData = tk.data;
             const tr = document.createElement('tr');
-            let rowHtml = `<td><span class="tk-name" style="font-weight:700; color:#3c50e0;">${tkName}</span></td>`;
+            let medal = (index === 0) ? '🥇 ' : (index === 1) ? '🥈 ' : (index === 2) ? '🥉 ' : '';
+
+            let rowHtml = `
+                <td style="border-right: 2px solid #f1f5f9; min-width: 180px; vertical-align: middle;">
+                    <div style="font-size: 0.6rem; color: #8a99af; font-weight: 800; text-transform: uppercase;">Рейтинг: №${index + 1}</div>
+                    <div class="tk-name" style="font-size: 1.05rem;">${medal}${tk.name}</div>
+                    <div style="font-size: 0.7rem; color: #10b981; font-weight: 700; margin-top: 3px;" title="Средний КПД по всем категориям">
+                        КПД: ${(tk.score * 10).toFixed(2)} <small style="font-weight:400; opacity:0.7">ед.</small>
+                    </div>
+                </td>`;
 
             categories.forEach(cat => {
                 const stats = tkData[cat];
                 if (stats) {
                     const avgCheck = Math.round(stats.total_spent / stats.total_shipments);
-                    const currentVal = cat.includes('Малые') ? (stats.total_spent / stats.total_shipments) : stats.cost_per_kg;
+                    const isBestKg = stats.cost_per_kg === winners[cat].minKg;
+                    const isBestCheck = (stats.total_spent / stats.total_shipments) === winners[cat].minCheck;
 
-                    // Определение стиля ячейки (Золото / Серебро)
-                    let bgStyle = 'border-right: 1px solid #f1f5f9;';
-                    let badge = '';
+                    const bgStyle = (isBestKg || isBestCheck) ? 'background-color: #f0fff4; border: 1px solid #c6f6d5;' : 'border-right: 1px solid #f1f5f9;';
 
-                    if (currentVal === winners[cat].gold) {
-                        bgStyle = 'background-color: #f0fff4; border: 2px solid #c6f6d5;'; // Зеленый (Золото)
-                        badge = '<div style="font-size:0.6rem; color:#2f855a; font-weight:800; margin-bottom:4px;">🏆 ЛУЧШАЯ ЦЕНА</div>';
-                    } else if (currentVal === winners[cat].silver) {
-                        bgStyle = 'background-color: #f0f9ff; border: 1px dashed #bee3f8;'; // Голубой (Серебро)
-                        badge = '<div style="font-size:0.6rem; color:#2b6cb0; font-weight:800; margin-bottom:4px;">🥈 ВЫГОДНЫЙ ТАРИФ</div>';
-                    }
+                    // Пояснения для лидеров
+                    let leaderLabel = "";
+                    if (isBestKg && isBestCheck) leaderLabel = `<div style="font-size:0.55rem; color:#2f855a; font-weight:800; margin-bottom:2px;">🏆💎 АБСОЛЮТНЫЙ ЛИДЕР</div>`;
+                    else if (isBestKg) leaderLabel = `<div style="font-size:0.55rem; color:#2f855a; font-weight:800; margin-bottom:2px;">🏆 ЛУЧШИЙ ТАРИФ (КГ)</div>`;
+                    else if (isBestCheck) leaderLabel = `<div style="font-size:0.55rem; color:#15803d; font-weight:800; margin-bottom:2px;">💎 ЛУЧШИЙ ЧЕК (ФИКС)</div>`;
 
                     rowHtml += `
-                        <td class="text-center" style="${bgStyle} padding: 15px 5px !important; transition: all 0.3s;">
-                            ${badge}
+                        <td class="text-center" style="${bgStyle} padding: 12px 5px !important; transition: all 0.3s;">
+                            ${leaderLabel}
 
-                            <div style="margin-bottom: 8px; line-height: 1.2;">
-                                <div style="font-size: 0.65rem; color: #8a99af; text-transform: uppercase;">Тарифы:</div>
-                                <span style="color:#10b981; font-weight:800; font-size: 0.9rem;">${stats.cost_per_kg}<small> ₽/кг</small></span>
-                                <span style="opacity:0.2; margin: 0 4px;">|</span>
-                                <span style="color:#3c50e0; font-weight:800; font-size: 0.9rem;">${Math.round(stats.cost_per_m3 || 0).toLocaleString()}<small> ₽/м³</small></span>
+                            <div style="margin-bottom: 6px; line-height: 1.1;">
+                                <div style="font-size: 0.6rem; color: #8a99af; text-transform: uppercase;">Медиана (кг):</div>
+                                <div style="color: ${isBestKg ? '#10b981' : '#475569'}; font-weight: 800; font-size: 0.95rem;"
+                                     title="Типичная стоимость за 1 кг (без учета аномальных накладных)">
+                                    ${stats.cost_per_kg}<small> ₽/кг</small>
+                                </div>
+                                <!-- Пояснение диапазона -->
+                                <div style="font-size: 0.55rem; color: #94a3b8; margin-top: 2px;"
+                                     title="В этот диапазон попадает 50% всех грузов в этой категории">
+                                    Диапазон: ${stats.q25_kg} – ${stats.q75_kg} ₽
+                                </div>
                             </div>
 
-                            <div style="font-size: 0.65rem; color: #8a99af; text-transform: uppercase;">Средний чек:</div>
-                            <div style="background:#f1f5f9; color:#475569; padding:4px 10px; border-radius:6px; font-weight:800; display:inline-block; font-size:0.9rem; margin-bottom:8px; border: 1px solid #e2e8f0;">
+                            <div style="font-size: 0.6rem; color: #8a99af; text-transform: uppercase; margin-top: 8px;">Средний чек:</div>
+                            <div style="background:${isBestCheck ? '#dcfce7' : '#f1f5f9'}; color:${isBestCheck ? '#15803d' : '#475569'}; padding:3px 8px; border-radius:6px; font-weight:800; display:inline-block; font-size:0.85rem; margin: 4px 0 6px 0; border: 1px solid ${isBestCheck ? '#86efac' : '#e2e8f0'};"
+                                 title="Средняя стоимость одной накладной. Важно для малых грузов, где работает 'минималка' ТК">
                                 ${avgCheck.toLocaleString()} ₽ <small style="font-weight:400; opacity:0.6">/гр.</small>
                             </div>
 
-                            <div style="font-size:0.7rem; color:#8a99af; border-top: 1px solid rgba(0,0,0,0.05); pt-2; margin-top: 5px;">
-                                <div style="margin-top: 5px;">Всего: <b style="color: #1c2434;">${Math.round(stats.total_spent).toLocaleString()} ₽</b></div>
-                                <div style="margin-top: 2px;">Выборка: <b style="color: #3c50e0;">${stats.total_shipments}</b> грузов</div>
+                            <div style="font-size: 0.65rem; color: #8a99af; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 4px; margin-top: 4px;">
+                                <div style="color: #3c50e0; font-weight: 700;" title="Стоимость за 1 кубический метр">🧊 ${Math.round(stats.cost_per_m3).toLocaleString()} <small>₽/м³</small></div>
+                                <div title="Количество грузов, на основе которых сделан расчет">📊 Выборка: <b>${stats.total_shipments}</b> шт.</div>
                             </div>
                         </td>`;
                 } else {
-                    rowHtml += `<td class="text-center" style="opacity: 0.15; background: #fafafa; vertical-align: middle;">— данных нет —</td>`;
+                    rowHtml += `<td class="text-center" style="opacity: 0.1; background: #fafafa; vertical-align: middle;">—</td>`;
                 }
             });
 
-            // Итоговая колонка
-            rowHtml += `<td class="text-end fw-bold" style="color: #1c2434; font-size:1.1rem; vertical-align: middle;">
-                            ${Math.round(tkData.total).toLocaleString('ru-RU')} ₽
-                        </td>`;
+            const tAvgKg = tkData.total_w > 0 ? (tkData.total / tkData.total_w).toFixed(2) : 0;
+            const tAvgM3 = tkData.total_v > 0 ? Math.round(tkData.total / tkData.total_v).toLocaleString('ru-RU') : 0;
+
+            rowHtml += `
+                <td class="text-end" style="vertical-align: middle; background: #fcfdfe; border-left: 2px solid #f1f5f9; min-width: 200px; padding-left: 15px !important;">
+                    <div style="font-size: 0.65rem; color: #8a99af; text-transform: uppercase; margin-bottom: 4px;">Всего затрат:</div>
+                    <div style="color: var(--accent); font-size: 1.4rem; font-weight: 900; line-height: 1; margin-bottom: 10px;">
+                        ${Math.round(tkData.total).toLocaleString('ru-RU')} <small style="font-size: 0.8rem;">₽</small>
+                    </div>
+                    <div style="border-top: 1px solid #edf2f7; padding-top: 8px; font-size: 0.75rem; color: #475569; margin-bottom: 8px;">
+                        <div>📦 <b>${tkData.total_p}</b> мест</div>
+                        <div>⚖️ <b>${tkData.total_w.toLocaleString('ru-RU')}</b> кг</div>
+                        <div>🧊 <b>${tkData.total_v.toLocaleString('ru-RU')}</b> м³</div>
+                    </div>
+                    <div style="background: #f8fafc; border-radius: 8px; padding: 6px 10px; border: 1px solid #e2e8f0;">
+                        <div class="d-flex justify-content-between" style="font-size: 0.8rem; font-weight: 700;">
+                            <span style="color: #10b981;">${tAvgKg} <small>₽/кг</small></span>
+                            <span style="color: #3c50e0;">${tAvgM3} <small>₽/м³</small></span>
+                        </div>
+                    </div>
+                </td>`;
 
             tr.innerHTML = rowHtml;
             tbody.appendChild(tr);
-        }
-        console.log("✅ Матрица лидеров отрисована!");
-
-    } catch (e) {
-        console.error("❌ Ошибка:", e);
-    }
+        });
+        console.log("✅ Аналитика очищена от аномалий.");
+    } catch (e) { console.error("❌ Ошибка:", e); }
 }
+
 
 
 // Стартовый запуск
