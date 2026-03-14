@@ -88,53 +88,49 @@
     <a href="/" class="btn btn-sm btn-outline-secondary" style="border-radius: 8px;">⬅️ К списку грузов</a>
 </div>
 
-    <!-- СВОДНЫЕ ПОКАЗАТЕЛИ (В ОДИН РЯД) -->
-<!--     <div class="stats-wrapper">
-        <div class="stat-card">
-            <span class="stat-label">📦 МЕСТ В ПУТИ</span>
-            <div class="stat-value" id="stat-places">0</div>
-        </div>
-
-        <div class="stat-card">
-            <span class="stat-label">⚖️ ОБЩИЙ ВЕС</span>
-            <div class="stat-value">
-                <span id="stat-weight">0</span><span class="stat-unit">кг</span>
-            </div>
-        </div>
-
-        <div class="stat-card">
-            <span class="stat-label">🧊 ОБЪЕМ ГРУЗА</span>
-            <div class="stat-value">
-                <span id="stat-volume">0</span><span class="stat-unit">м³</span>
-            </div>
-        </div>
-
-        <div class="stat-card danger">
-            <span class="stat-label text-danger">💰 К ОПЛАТЕ</span>
-            <div class="stat-value">
-                <span id="stat-unpaid">0</span><span class="stat-unit">₽</span>
-            </div>
-        </div>
-    </div>
- -->
     <!-- ТАБЛИЦА ЭФФЕКТИВНОСТИ -->
     <div class="table-container">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h5 class="fw-bold m-0">Сравнение эффективности перевозчиков</h5>
         </div>
 
-        <!-- ИНФО-ЛЕГЕНДА -->
-        <div class="alert alert-light border-0 shadow-sm mb-4" style="border-radius: 12px; background: #fff;">
-            <div class="d-flex align-items-start gap-3">
-                <div style="font-size: 1.5rem;">ℹ️</div>
-                <div class="small text-muted">
-                    <b class="text-dark">Как читается эта таблица:</b><br>
-                    • <b>Фильтр аномалий:</b> В расчетах <span class="badge bg-warning text-dark">не учитываются</span> разовые сверхкрупные грузы <b>более 5 тонн</b> (чтобы не искажать средние тарифы).<br>
-                    • <b>Медиана (кг):</b> Типичная цена перевозки. В отличие от "средней", она игнорирует случайные сверхдорогие или дешевые накладные.<br>
-                    • <b>Рейтинг КПД:</b> Место в списке (🥇, 🥈) зависит от <b>эффективности</b> — сколько кг и кубов перевозчик везет на каждый 1 рубль во всех категориях.
+        <!-- ПРОДВИНУТАЯ ИНФО-ПАНЕЛЬ -->
+        <div class="card border-0 shadow-sm mb-4" style="border-radius: 16px; background: linear-gradient(to right, #ffffff, #f8faff);">
+            <div class="card-body p-4">
+                <div class="d-flex align-items-center gap-3 mb-3">
+                    <h5 class="fw-bold m-0">Инструкция к аналитическому дашборду</h5>
+                </div>
+
+                <div class="row g-4">
+                    <!-- Блок 1: Очистка данных -->
+                    <div class="col-md-4">
+                        <div class="fw-bold mb-2" style="color: var(--accent); font-size: 0.85rem; text-transform: uppercase;">🛡 Очистка данных</div>
+                        <div class="small text-muted">
+                            Исключены грузы <b>свыше 5 тонн</b> и разовые спец-тарифы. Это позволяет видеть <b>реальный рынок</b>, а не случайные аномалии или проектные отгрузки.
+                        </div>
+                    </div>
+
+                    <!-- Блок 2: Математика -->
+                    <div class="col-md-4" style="border-left: 1px solid #eef2f6; border-right: 1px solid #eef2f6;">
+                        <div class="fw-bold mb-2" style="color: var(--success); font-size: 0.85rem; text-transform: uppercase;">⚖️ Математика</div>
+                        <div class="small text-muted">
+                            Используется <b>Медиана</b> — она точнее "среднего", так как не реагирует на единичные дорогие накладные. <b>Диапазон</b> показывает границы, в которые попадает 50% всех наших типичных грузов.
+                        </div>
+                    </div>
+
+                    <!-- Блок 3: Лидерство -->
+                    <div class="col-md-4">
+                        <div class="fw-bold mb-2" style="color: #f59e0b; font-size: 0.85rem; text-transform: uppercase;">🏆 Система наград</div>
+                        <div class="small text-muted">
+                            <b>Кубок 🏆</b> — лучший тариф за вес. <br>
+                            <b>Алмаз 💎</b> — самая дешевая "минималка" (один груз). <br>
+                            <b>Рейтинг КПД</b> — общая эффективность ТК (тоннаж/рубль) по всем видам грузов.
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
+<p></p>
 
         <div class="table-responsive">
             <table class="table">
@@ -164,22 +160,7 @@ async function loadAnalytics(days = 30) {
     try {
         console.log(`🚀 Честный анализ за ${days} дн. (Без аномалий > 5т)`);
 
-        // 1. СВОДКА (Карточки)
-        const resSum = await fetch(`/api/analytics?days=${days}`);
-        const dataSum = await resSum.json();
-        if (dataSum.status === 'ok' && dataSum.summary) {
-            const s = dataSum.summary;
-            const setVal = (id, val) => {
-                const el = document.getElementById(id);
-                if (el) el.innerText = (val || 0).toLocaleString('ru-RU');
-            };
-            setVal('stat-places', s.total_places);
-            setVal('stat-weight', s.total_weight);
-            setVal('stat-volume', s.total_volume);
-            setVal('stat-unpaid', s.total_unpaid);
-        }
-
-        // 2. ДАННЫЕ ТАБЛИЦЫ
+        // 1. ДАННЫЕ ТАБЛИЦЫ
         const resTk = await fetch(`/api/analytics/tk-compare?days=${days}`);
         const dataTk = await resTk.json();
 
@@ -262,38 +243,42 @@ async function loadAnalytics(days = 30) {
                     else if (isBestKg) leaderLabel = `<div style="font-size:0.55rem; color:#2f855a; font-weight:800; margin-bottom:2px;">🏆 ЛУЧШИЙ ТАРИФ (КГ)</div>`;
                     else if (isBestCheck) leaderLabel = `<div style="font-size:0.55rem; color:#15803d; font-weight:800; margin-bottom:2px;">💎 ЛУЧШИЙ ЧЕК (ФИКС)</div>`;
 
-                    rowHtml += `
-                        <td class="text-center" style="${bgStyle} padding: 12px 5px !important; transition: all 0.3s;">
-                            ${leaderLabel}
+rowHtml += `
+                    <td class="text-center" style="${bgStyle} padding: 12px 5px !important; transition: all 0.3s;">
+                        <!-- Метка лидера -->
+                        ${leaderLabel}
 
-                            <div style="margin-bottom: 6px; line-height: 1.1;">
-                                <div style="font-size: 0.6rem; color: #8a99af; text-transform: uppercase;">Медиана (кг):</div>
-                                <div style="color: ${isBestKg ? '#10b981' : '#475569'}; font-weight: 800; font-size: 0.95rem;"
-                                     title="Типичная стоимость за 1 кг (без учета аномальных накладных)">
-                                    ${stats.cost_per_kg}<small> ₽/кг</small>
-                                </div>
-                                <!-- Пояснение диапазона -->
-                                <div style="font-size: 0.55rem; color: #94a3b8; margin-top: 2px;"
-                                     title="В этот диапазон попадает 50% всех грузов в этой категории">
-                                    Диапазон: ${stats.q25_kg} – ${stats.q75_kg} ₽
-                                </div>
+                        <!-- ТАРИФ (МЕДИАНА) -->
+                        <div style="margin-bottom: 6px; line-height: 1.1;">
+                            <div style="font-size: 0.6rem; color: #8a99af; text-transform: uppercase;">Медиана (кг):</div>
+                            <div style="color: ${isBestKg ? '#10b981' : '#475569'}; font-weight: 800; font-size: 0.95rem;"
+                                 title="Медиана — это цена самого 'центрального' груза в списке. Она защищена от влияния разовых очень дорогих или дешевых доставок.">
+                                ${stats.cost_per_kg}<small> ₽/кг</small>
                             </div>
+                            <!-- Пояснение диапазона -->
+                            <div style="font-size: 0.55rem; color: #94a3b8; margin-top: 2px;"
+                                 title="Границы, в которые попадает 50% всех типичных грузов. Если новый счет выше этого диапазона — это повод для проверки.">
+                                Типично: ${stats.q25_kg} – ${stats.q75_kg} ₽
+                            </div>
+                        </div>
 
-                            <div style="font-size: 0.6rem; color: #8a99af; text-transform: uppercase; margin-top: 8px;">Средний чек:</div>
-                            <div style="background:${isBestCheck ? '#dcfce7' : '#f1f5f9'}; color:${isBestCheck ? '#15803d' : '#475569'}; padding:3px 8px; border-radius:6px; font-weight:800; display:inline-block; font-size:0.85rem; margin: 4px 0 6px 0; border: 1px solid ${isBestCheck ? '#86efac' : '#e2e8f0'};"
-                                 title="Средняя стоимость одной накладной. Важно для малых грузов, где работает 'минималка' ТК">
-                                ${avgCheck.toLocaleString()} ₽ <small style="font-weight:400; opacity:0.6">/гр.</small>
-                            </div>
+                        <!-- СРЕДНИЙ ЧЕК ЗА ГРУЗ -->
+                        <div style="font-size: 0.6rem; color: #8a99af; text-transform: uppercase; margin-top: 8px;">Средний чек:</div>
+                        <div style="background:${isBestCheck ? '#dcfce7' : '#f1f5f9'}; color:${isBestCheck ? '#15803d' : '#475569'}; padding:3px 8px; border-radius:6px; font-weight:800; display:inline-block; font-size:0.85rem; margin: 4px 0 6px 0; border: 1px solid ${isBestCheck ? '#86efac' : '#e2e8f0'};"
+                             title="Средняя стоимость одной накладной. Главный показатель для мелких отправок, где работает 'минималка' ТК">
+                            ${avgCheck.toLocaleString()} ₽ <small style="font-weight:400; opacity:0.6">/гр.</small>
+                        </div>
 
-                            <div style="font-size: 0.65rem; color: #8a99af; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 4px; margin-top: 4px;">
-                                <div style="color: #3c50e0; font-weight: 700;" title="Стоимость за 1 кубический метр">🧊 ${Math.round(stats.cost_per_m3).toLocaleString()} <small>₽/м³</small></div>
-                                <div title="Количество грузов, на основе которых сделан расчет">📊 Выборка: <b>${stats.total_shipments}</b> шт.</div>
-                            </div>
-                        </td>`;
-                } else {
-                    rowHtml += `<td class="text-center" style="opacity: 0.1; background: #fafafa; vertical-align: middle;">—</td>`;
-                }
-            });
+                        <!-- ДОП ИНФО (ОБЪЕМ + ВЫБОРКА) -->
+                        <div style="font-size: 0.65rem; color: #8a99af; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 4px; margin-top: 4px;">
+                            <div style="color: #3c50e0; font-weight: 700;" title="Цена за 1 кубический метр. Полезна для оценки легких, но габаритных грузов.">🧊 ${Math.round(stats.cost_per_m3).toLocaleString()} <small>₽/м³</small></div>
+                            <div title="На каком количестве реальных отгрузок построен этот расчет. Чем выше цифра, тем точнее данные.">📊 Выборка: <b>${stats.total_shipments}</b> шт.</div>
+                        </div>
+                    </td>`;
+            } else {
+                rowHtml += `<td class="text-center" style="opacity: 0.15; background: #fafafa; vertical-align: middle;">—</td>`;
+            }
+        });
 
             const tAvgKg = tkData.total_w > 0 ? (tkData.total / tkData.total_w).toFixed(2) : 0;
             const tAvgM3 = tkData.total_v > 0 ? Math.round(tkData.total / tkData.total_v).toLocaleString('ru-RU') : 0;

@@ -514,25 +514,21 @@ def parse_magic(items_list):
     if not items_list: return results
 
     for item in items_list:
-        # 1. ПЕРЕИМЕНОВАНИЕ ТК
+        # 1. ЕДИНОЕ ИМЯ ТК ДЛЯ АНАЛИТИКИ
         tk_name = "МЭДЖИК"
 
-        # 2. ЧИСТКА РОУТОВ (Сплитуем "Москва - Астрахань" через дефис)
+        # 2. ЧИСТКА РОУТОВ
         route_raw = str(item.get('route', 'Н/Д'))
         if " - " in route_raw:
             parts = route_raw.split(" - ")
-            # Чистим города через твой clean_name с флагом True
             from_city = clean_name(parts[0].strip(), True)
             to_city = clean_name(parts[1].strip(), True)
             route = f"{from_city} -> {to_city}"
         else:
             route = clean_name(route_raw, True)
 
-        # 3. ЛОГИКА СТАТУСОВ (Синхронизация с твоим main.js)
+        # 3. ЛОГИКА СТАТУСОВ
         status_raw = str(item.get('status', '')).upper()
-
-        # Если в Excel есть "ДОСТАВКЕ", даем статус со словом "ДОСТАВКА"
-        # Твой JS (rawStatus.includes('оставк')) поймает это и покажет "Доставка ТК ➡️ СКЛАД"
         if "ДОСТАВКЕ" in status_raw or "ЭКСПЕДИРОВАНИЕ" in status_raw:
             display_status = "ДОСТАВКА ДО СКЛАДА"
         elif "ПРИБЫЛ" in status_raw:
@@ -540,13 +536,24 @@ def parse_magic(items_list):
         else:
             display_status = status_raw
 
-        # 4. ДАТА ДЛЯ БД (Всегда YYYY-MM-DD)
+        # 4. ДАТА ДЛЯ БД
         arrival_raw = item.get('arrival', '')
         try:
             dt = datetime.strptime(arrival_raw, '%d.%m.%Y')
             arrival_db = dt.strftime('%Y-%m-%d')
         except:
             arrival_db = datetime.now().strftime('%Y-%m-%d')
+
+        # 5. УМНАЯ ЛОГИКА ОПРЕДЕЛЕНИЯ ПЛАТЕЛЬЩИКА
+        # Ищем в сырых данных плательщика и получателя
+        raw_payer = str(item.get('payer_type') or item.get('Плательщик') or '').upper()
+        raw_recipient = str(item.get('recipient') or '').upper()
+
+        # Если в плательщике ИЛИ в получателе есть "ФОРПОСТ" — значит платим МЫ
+        if "ФОРПОСТ" in raw_payer or "ФОРПОСТ" in raw_recipient:
+            p_type = "recipient"
+        else:
+            p_type = "sender"
 
         results.append({
             "tk": tk_name,
@@ -559,10 +566,11 @@ def parse_magic(items_list):
             "arrival": arrival_db,
             "payment": item.get('payment'),
             "total_price": float(item.get('total_price', 0)),
-            "payer_type": "recipient" if "ЮЖНЫЙ ФОРПОСТ" in str(item.get('Плательщик', '')).upper() else "sender",
+            "payer_type": p_type,
             "is_manual": False
         })
     return results
+
 
 # --- ФУНКЦИИ СОХРАНЕНИЯ ---
 

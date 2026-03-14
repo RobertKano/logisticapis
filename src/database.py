@@ -3,6 +3,8 @@ import sqlite3
 import os
 import re
 from datetime import datetime
+import traceback
+
 try:
     from src.settings import DB_PATH
 except ImportError:
@@ -15,7 +17,7 @@ class CargoDB:
         self.init_tasks_table()
 
     def get_connection(self):
-        return sqlite3.connect(DB_PATH)
+        return sqlite3.connect(DB_PATH, timeout=30)
 
     def init_db(self):
         """Добавлено поле created_at для корректного расчета сроков"""
@@ -88,74 +90,65 @@ class CargoDB:
         return places, weight, volume
 
     def upsert_cargo(self, item, is_archived=0):
-        """Обновляет данные, сохраняя статус архивации и параметры"""
-        # 1. Парсим параметры из строки "1М | 10КГ | 0.5М3"
         p_val, w_val, v_val = self._parse_params(item.get('params', ''))
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO cargo (
-                    id, tk, sender, recipient, route,
-                    places, weight, volume,
-                    status, arrival, payment, total_price,
-                    payer_type, is_archived, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    tk=excluded.tk,
-                    sender=excluded.sender,
-                    recipient=excluded.recipient,
-                    route=excluded.route,
-                    arrival=excluded.arrival,
-                    payment=excluded.payment,
-                    total_price=excluded.total_price,
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO cargo (
+                        id, tk, sender, recipient, route,
+                        places, weight, volume,
+                        status, arrival, payment, total_price,
+                        payer_type, is_archived, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        tk=excluded.tk,
+                        sender=excluded.sender,
+                        recipient=excluded.recipient,
+                        route=excluded.route,
+                        arrival=excluded.arrival,
+                        payment=excluded.payment,
+                        total_price=excluded.total_price,
+                        places=excluded.places,
+                        weight=excluded.weight,
+                        volume=excluded.volume,
+                        status = excluded.status,
+                        is_archived = CASE
+                            WHEN excluded.is_archived = 1
+                                 OR UPPER(excluded.status) LIKE '%ВЫДАН%'
+                                 OR UPPER(excluded.status) LIKE '%АРХИВ%'
+                            THEN 1 ELSE 0
+                        END,
+                        archived_at = CASE
+                            WHEN excluded.is_archived = 1
+                                 OR UPPER(excluded.status) LIKE '%ВЫДАН%'
+                                 OR UPPER(excluded.status) LIKE '%АРХИВ%'
+                            THEN COALESCE(cargo.archived_at, CURRENT_TIMESTAMP)
+                            ELSE NULL
+                        END,
+                        created_at = COALESCE(cargo.created_at, excluded.created_at),
 
-                    -- ОБНОВЛЯЕМ ПАРАМЕТРЫ (чтобы не были 0)
-                    places=excluded.places,
-                    weight=excluded.weight,
-                    volume=excluded.volume,
+                        -- (!) ПРАВКА: Убрали CASE. Теперь дата обновления пишется ВСЕГДА.
+                        -- Это лечит "зависание" времени на 11:30 в аналитике.
+                        updated_at = excluded.updated_at
 
-                    -- ОБНОВЛЯЕМ ТЕКСТ СТАТУСА (51% -> 98%)
-                    status = excluded.status,
-
-                    -- ЛОГИКА АРХИВАЦИИ:
-                    -- Если пришел флаг архивации (is_archived=1) ИЛИ статус содержит ключевые слова
-                    is_archived = CASE
-                        WHEN excluded.is_archived = 1
-                             OR UPPER(excluded.status) LIKE '%ВЫДАН%'
-                             OR UPPER(excluded.status) LIKE '%АРХИВ%'
-                        THEN 1
-                        ELSE 0
-                    END,
-
-                    -- УПРАВЛЕНИЕ ДАТОЙ АРХИВАЦИИ
-                    archived_at = CASE
-                        WHEN excluded.is_archived = 1
-                             OR UPPER(excluded.status) LIKE '%ВЫДАН%'
-                             OR UPPER(excluded.status) LIKE '%АРХИВ%'
-                        THEN COALESCE(cargo.archived_at, CURRENT_TIMESTAMP)
-                        ELSE NULL
-                    END,
-
-                    created_at = COALESCE(cargo.created_at, excluded.created_at),
-
-                    -- ТАЙМЕР ОБНОВЛЕНИЯ (только при реальной смене текста статуса)
-                    updated_at = CASE
-                        WHEN cargo.status = excluded.status THEN cargo.updated_at
-                        ELSE excluded.updated_at
-                    END
-            ''', (
-                item.get('id'), item.get('tk'), item.get('sender'),
-                item.get('recipient'), item.get('route'),
-                p_val, w_val, v_val,
-                item.get('status'), item.get('arrival'), item.get('payment'),
-                float(item.get('total_price', 0) or 0.0),
-                item.get('payer_type'), is_archived,
-                now, now
-            ))
-            conn.commit()
-
+                ''', (
+                    item.get('id'), item.get('tk'), item.get('sender'),
+                    item.get('recipient'), item.get('route'),
+                    p_val, w_val, v_val,
+                    item.get('status'), item.get('arrival'), item.get('payment'),
+                    float(item.get('total_price', 0) or 0.0),
+                    item.get('payer_type'), is_archived,
+                    now, now
+                ))
+                conn.commit()
+        except Exception as e:
+            # (!) TRACEBACK: Если база залочена или ошибка в SQL,
+            # ты увидишь в консоли ПОЛНЫЙ путь ошибки, а не просто "Error"
+            print(f"\n❌ [КРИТИЧЕСКАЯ ОШИБКА БД] Груз {item.get('id')}:")
+            traceback.print_exc()
 
     def archive_stuck_bsd(self):
         """

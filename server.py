@@ -88,38 +88,6 @@ def get_report_from_db():
         conn.close()
 
 
-@app.route('/api/analytics')
-def api_analytics():
-    try:
-        conn = db.get_connection()
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-
-        # 1. ОБЩАЯ СВОДКА (Карточки сверху)
-        # Учитываем всё, где участвует "ЮЖНЫЙ ФОРПОСТ" и груз активен
-        cursor.execute("""
-            SELECT
-                SUM(places) as total_places,
-                ROUND(SUM(weight), 1) as total_weight,
-                ROUND(SUM(volume), 2) as total_volume,
-                ROUND(SUM(total_price), 2) as total_unpaid
-            FROM cargo
-            WHERE is_archived = 0
-              AND (sender LIKE '%ЮЖНЫЙ ФОРПОСТ%' OR recipient LIKE '%ЮЖНЫЙ ФОРПОСТ%')
-        """)
-        summary = dict(cursor.fetchone())
-
-        return jsonify({
-            "status": "ok",
-            "summary": summary
-        })
-    except Exception as e:
-        print(f"[Analytics Summary Error] {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-    finally:
-        conn.close()
-
-
 @app.route('/api/analytics/tk-compare')
 def api_tk_compare():
     days = request.args.get('days', 30)
