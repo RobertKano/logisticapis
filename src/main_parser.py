@@ -50,11 +50,6 @@ class MemoryManager:
         ghosts = []
         to_archive_missing = []
 
-
-        ghosts = []
-        to_archive_missing = []
-
-
         for item in last_active:
             cargo_id = str(item['id'])
 
@@ -68,10 +63,12 @@ class MemoryManager:
             # Оставляем только те слова, которые гарантируют, что груз у нас/выдан.
             # Если это Мэджик, мы игнорируем слово "ДОСТАВЛЕН" как повод для архива.
             final_keywords = ["ВЫДАН", "АРХИВ", "ПОЛУЧЕН", "ЗАВЕРШЕН"]
+            # ГРУЗ ДОСТАВЛЕН НА СКЛАД ПОЛУЧАТЕЛЬ
 
+            # (17-03-2026) закомментил, чекаем мэджик
             # Если это НЕ Мэджик, можно оставить "ДОСТАВЛЕН" (например для ДЛ)
-            if item.get('tk') != 'МЭДЖИК':
-                final_keywords.append("ДОСТАВЛЕН")
+            # if item.get('tk') != 'МЭДЖИК':
+            #     final_keywords.append("ДОСТАВЛЕН")
 
             is_finished = any(word in status_upper for word in final_keywords)
 
